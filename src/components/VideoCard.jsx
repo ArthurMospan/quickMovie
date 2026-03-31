@@ -46,7 +46,6 @@ function openCalendarReminder(movie) {
 export default function VideoCard({ 
   movie, 
   active, 
-  shouldRenderPlayer, 
   isSaved, 
   onToggleSave, 
   isGlobalMuted, 
@@ -72,36 +71,30 @@ export default function VideoCard({
           JSON.stringify({ event: 'command', func, args }), '*'
         );
       }
-    } catch (e) {
-      // Cross-origin issues or iframe not ready
-    }
+    } catch (e) { /* cross-origin safe */ }
   };
 
-  // --- Manage Playback and Audio Lifecycle ---
+  // --- When active: force play with retries + sync audio ---
   useEffect(() => {
-    if (!shouldRenderPlayer) return;
+    if (!active) return;
+    
+    // Force playVideo at multiple intervals to catch the iframe when it's ready
+    const t1 = setTimeout(() => sendCommand('playVideo'), 300);
+    const t2 = setTimeout(() => sendCommand('playVideo'), 800);
+    const t3 = setTimeout(() => sendCommand('playVideo'), 1500);
+    
+    // Sync mute state after player is likely ready
+    const tMute = setTimeout(() => {
+      sendCommand(isGlobalMuted ? 'mute' : 'unMute');
+    }, 600);
 
-    if (active) {
-      // 1. Force Play with retries (critical for mobile after swipe)
-      const playCommands = [50, 300, 600, 1000].map(delay => 
-        setTimeout(() => sendCommand('playVideo'), delay)
-      );
-      
-      // 2. Sync Mute State
-      const muteTimer = setTimeout(() => {
-        sendCommand(isGlobalMuted ? 'mute' : 'unMute');
-      }, 500);
-
-      return () => {
-        playCommands.forEach(t => clearTimeout(t));
-        clearTimeout(muteTimer);
-      };
-    } else {
-      // Pause and Mute non-active players that are pre-rendered
-      sendCommand('pauseVideo');
-      sendCommand('mute');
-    }
-  }, [active, shouldRenderPlayer, isGlobalMuted]);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+      clearTimeout(tMute);
+    };
+  }, [active, isGlobalMuted]);
 
   // --- Handle Speed Changes ---
   const handleSpeedChange = () => {
@@ -114,7 +107,6 @@ export default function VideoCard({
   const handleToggleMute = () => {
     const newMuted = !isGlobalMuted;
     setIsGlobalMuted(newMuted);
-    // Directly send command to current active iframe for immediate feedback
     sendCommand(newMuted ? 'mute' : 'unMute');
   };
 
@@ -192,13 +184,13 @@ export default function VideoCard({
         <div className="absolute inset-0 bg-black/40"></div>
       </div>
 
-      {/* 2. Video Player */}
+      {/* 2. Video Player — ONLY render iframe for active card */}
       <div className="relative z-10 w-full h-full flex items-center justify-center pointer-events-none">
-        {shouldRenderPlayer ? (
+        {active ? (
           <iframe
             ref={iframeRef}
-            className={`w-full aspect-video shadow-[0_0_50px_rgba(0,0,0,0.8)] transition-opacity duration-500 ${active ? 'opacity-100' : 'opacity-0'}`}
-            src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=0&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&loop=1&playlist=${movie.trailerKey}&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`}
+            className="w-full aspect-video shadow-[0_0_50px_rgba(0,0,0,0.8)]"
+            src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&loop=1&playlist=${movie.trailerKey}&enablejsapi=1`}
             frameBorder="0" 
             allow="autoplay; encrypted-media; picture-in-picture; accelerometer; gyroscope"
             allowFullScreen

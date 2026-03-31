@@ -290,25 +290,18 @@ export default function App() {
             onScroll={handleScroll} 
             className="h-[100dvh] w-full overflow-y-scroll snap-y snap-mandatory scrollbar-hide bg-black"
           >
-            {feedMovies.map((movie, index) => {
-              // Pre-render logic: Keep 3 videos in memory (current, prev, next)
-              // This is CRITICAL for mobile autoplay as the iframe must exist before the swipe ends
-              const shouldRenderPlayer = index >= activeIndex - 1 && index <= activeIndex + 1;
-              
-              return (
-                <VideoCard 
-                  key={movie.id} 
-                  movie={movie} 
-                  active={activeTab === 'feed' && index === activeIndex}
-                  shouldRenderPlayer={shouldRenderPlayer}
-                  isSaved={userData.saves?.includes(movie.id)}
-                  onToggleSave={() => handleToggleSave(movie.id)}
-                  isGlobalMuted={isGlobalMuted}
-                  setIsGlobalMuted={setIsGlobalMuted}
-                  isFirstVideo={index === 0}
-                />
-              );
-            })}
+            {feedMovies.map((movie, index) => (
+              <VideoCard 
+                key={movie.id} 
+                movie={movie} 
+                active={activeTab === 'feed' && index === activeIndex}
+                isSaved={userData.saves?.includes(movie.id)}
+                onToggleSave={() => handleToggleSave(movie.id)}
+                isGlobalMuted={isGlobalMuted}
+                setIsGlobalMuted={setIsGlobalMuted}
+                isFirstVideo={index === 0}
+              />
+            ))}
 
             {/* Loading spinner at bottom */}
             {loading && (

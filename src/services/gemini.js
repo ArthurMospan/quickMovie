@@ -1,8 +1,7 @@
-// --- Random jitter to avoid bot detection ---
-const jitter = () => new Promise(resolve => setTimeout(resolve, Math.random() * 300 + 100));
-
-// --- Try backend serverless function first (bypasses Vercel IP blocks) ---
+// --- Try backend serverless function first (the proper way on Vercel) ---
 const callBackendProxy = async (description) => {
+    console.log('Gemini: trying backend /api/search...');
+    
     const response = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -11,21 +10,27 @@ const callBackendProxy = async (description) => {
 
     if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        const status = response.status;
-        if (status === 429) {
-          throw new Error('429: Rate Limit. Try again in 5s.');
-        }
-        throw new Error(errData.error || `Backend error: ${status}`);
+        const msg = errData.error || `Backend error: ${response.status}`;
+        console.warn('Backend proxy failed:', msg);
+        throw new Error(msg);
     }
 
     const data = await response.json();
     return data.result;
 };
 
-// --- Direct Gemini call (fallback for local dev) ---
+// --- Direct Gemini call (fallback — works on localhost AND Vercel if backend is down) ---
 const callGeminiDirect = async (description) => {
-    const apiKey = localStorage.getItem('GEMINI_API_KEY') || import.meta.env.VITE_GEMINI_API_KEY;
-    if (!apiKey) throw new Error("Gemini API Key missing");
+    // Check multiple sources for the API key
+    const apiKey = localStorage.getItem('GEMINI_API_KEY') 
+        || import.meta.env.VITE_GEMINI_API_KEY 
+        || null;
+    
+    if (!apiKey) {
+        throw new Error("Gemini API ключ відсутній. Додайте VITE_GEMINI_API_KEY в Vercel Dashboard.");
+    }
+
+    console.log('Gemini: trying direct call with key...');
 
     const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
 
@@ -35,8 +40,8 @@ const callGeminiDirect = async (description) => {
         Якщо за описом підходить кілька, напиши найвідоміший. Якщо взагалі незрозуміло, напиши "Не вдалося розпізнати фільм". 
         Не пиши ніякого іншого тексту, привітань чи пояснень.`;
 
-    // Add jitter to reduce 429s (600ms for safety)
-    await new Promise(r => setTimeout(r, 600));
+    // Small delay to reduce 429s
+    await new Promise(r => setTimeout(r, 500));
 
     const response = await fetch(url, {
         method: 'POST',
@@ -52,6 +57,10 @@ const callGeminiDirect = async (description) => {
             }
         })
     });
+
+    if (response.status === 429) {
+        throw new Error('Занадто багато запитів. Зачекайте 10 секунд і спробуйте знову.');
+    }
 
     if (!response.ok) {
         throw new Error(`Gemini API error: ${response.status}`);
@@ -70,12 +79,9 @@ const callGeminiDirect = async (description) => {
 // --- Main export: backend first, then direct fallback ---
 export const guessMovieFromDescription = async (description) => {
     try {
-        // Try serverless backend first (works on Vercel, avoids 429)
-        console.log('Trying backend /api/search...');
         return await callBackendProxy(description);
     } catch (backendErr) {
-        console.warn('Backend proxy failed, trying direct Gemini call:', backendErr.message);
-        // Fallback to direct call (works on localhost)
+        console.warn('Backend failed:', backendErr.message, '— trying direct...');
         return await callGeminiDirect(description);
     }
 };
