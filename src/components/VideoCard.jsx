@@ -83,14 +83,14 @@ export default function VideoCard({
 
     if (active) {
       // 1. Force Play with retries (critical for mobile after swipe)
-      const playCommands = [100, 500, 1000].map(delay => 
+      const playCommands = [50, 300, 600, 1000].map(delay => 
         setTimeout(() => sendCommand('playVideo'), delay)
       );
       
       // 2. Sync Mute State
       const muteTimer = setTimeout(() => {
         sendCommand(isGlobalMuted ? 'mute' : 'unMute');
-      }, 800);
+      }, 500);
 
       return () => {
         playCommands.forEach(t => clearTimeout(t));
@@ -198,7 +198,7 @@ export default function VideoCard({
           <iframe
             ref={iframeRef}
             className={`w-full aspect-video shadow-[0_0_50px_rgba(0,0,0,0.8)] transition-opacity duration-500 ${active ? 'opacity-100' : 'opacity-0'}`}
-            src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&loop=1&playlist=${movie.trailerKey}&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`}
+            src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=0&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&loop=1&playlist=${movie.trailerKey}&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`}
             frameBorder="0" 
             allow="autoplay; encrypted-media; picture-in-picture; accelerometer; gyroscope"
             allowFullScreen
