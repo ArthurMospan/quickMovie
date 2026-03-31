@@ -1,12 +1,11 @@
-// Extended retry with more jitter and higher delays
-async function fetchWithRetry(url, options, maxRetries = 4) {
+// Retry with exponential backoff for 429 rate limits
+async function fetchWithRetry(url, options, maxRetries = 3) {
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
     const response = await fetch(url, options);
     
     if (response.status === 429 && attempt < maxRetries) {
-      // Exponential backoff: 2s, 5s, 10s, 20s
       const delay = Math.pow(2, attempt) * 2000 + Math.random() * 1000;
-      console.log(`[attempt ${attempt}] Gemini 429 detected. Sleeping ${Math.round(delay)}ms...`);
+      console.log(`[Gemini] 429 retry ${attempt + 1}/${maxRetries}, waiting ${Math.round(delay)}ms`);
       await new Promise(r => setTimeout(r, delay));
       continue;
     }
@@ -15,54 +14,73 @@ async function fetchWithRetry(url, options, maxRetries = 4) {
   }
 }
 
+// Try multiple models in order of preference
+const MODELS = [
+  'gemini-2.0-flash-lite',
+  'gemini-2.0-flash', 
+  'gemini-1.5-flash'
+];
+
 export default async function handler(req, res) {
-  // Region fix: fra1 (Frankfurt) is set in vercel.json to avoid US IP blocks
   if (req.method !== 'POST') return res.status(405).json({ error: 'POST only' });
 
   const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY missing' });
+  if (!apiKey) return res.status(500).json({ error: 'GEMINI_API_KEY not configured in Vercel' });
 
   const { description } = req.body;
   if (!description?.trim()) return res.status(400).json({ error: 'Text required' });
 
   const prompt = `Ти - експерт з кіно. Користувач описує фільм: "${description}". 
     Напиши ТІЛЬКИ назву українською та в дужках (Original Title, Year). 
-    Наприклад: Матриця (The Matrix, 1999). Якщо не впізнав, напиши "Не вдалося розпізнати фільм".`;
+    Наприклад: Матриця (The Matrix, 1999). Якщо не впізнав: "Не вдалося розпізнати фільм".`;
 
-  // Switching to gemini-1.5-flash as it's more stable for Free Tier/Serverless than 2.0-flash
-  const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent`;
-
-  try {
-    const response = await fetchWithRetry(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey,
-        'x-goog-api-client': 'genai-js/0.1.0',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-        'Referer': 'https://quick-movie-arthurmospan.vercel.app'
-      },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: { temperature: 0.1, maxOutputTokens: 60 }
-      })
-    });
-
-    if (!response.ok) {
-      const txt = await response.text();
-      console.error(`Gemini Error ${response.status}:`, txt);
-      return res.status(response.status).json({ error: `AI Error ${response.status}`, details: txt });
-    }
-
-    const data = await response.json();
-    const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim()?.replace(/['"]/g, '');
+  // Try each model until one works
+  for (const model of MODELS) {
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`;
     
-    if (!resultText) return res.status(500).json({ error: 'Empty AI response' });
+    console.log(`[Gemini] Trying model: ${model}`);
 
-    return res.status(200).json({ result: resultText });
+    try {
+      const response = await fetchWithRetry(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+          'x-goog-api-client': 'genai-js/0.1.0'
+        },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: { temperature: 0.1, maxOutputTokens: 60 }
+        })
+      });
 
-  } catch (err) {
-    console.error('Fetch error:', err);
-    return res.status(500).json({ error: 'Backend connection failed' });
+      if (response.status === 429) {
+        console.log(`[Gemini] ${model} returned 429, trying next model...`);
+        continue; // Try next model
+      }
+
+      if (!response.ok) {
+        const txt = await response.text();
+        console.error(`[Gemini] ${model} error ${response.status}:`, txt);
+        continue; // Try next model
+      }
+
+      const data = await response.json();
+      const resultText = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim()?.replace(/['"]/g, '');
+      
+      if (!resultText) continue;
+
+      console.log(`[Gemini] Success with model: ${model}`);
+      return res.status(200).json({ result: resultText });
+
+    } catch (err) {
+      console.error(`[Gemini] ${model} fetch error:`, err.message);
+      continue;
+    }
   }
+
+  // All models failed
+  return res.status(429).json({ 
+    error: 'Всі моделі AI перевантажені. Спробуйте через 30 секунд.' 
+  });
 }

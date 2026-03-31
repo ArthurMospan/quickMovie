@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Heart, Share2, Star, CheckCircle2, VolumeX, Volume2, Bell } from 'lucide-react';
+import { Heart, Share2, Star, CheckCircle2, VolumeX, Volume2, Bell, Play, Pause } from 'lucide-react';
 
 function ActionBtn({ icon, label, onClick }) {
   return (
@@ -12,122 +12,97 @@ function ActionBtn({ icon, label, onClick }) {
   );
 }
 
-// --- Upcoming / Release Date Helpers ---
 function isUpcoming(releaseDateStr) {
   if (!releaseDateStr) return false;
-  const releaseDate = new Date(releaseDateStr);
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-  return releaseDate > today;
+  return new Date(releaseDateStr) > new Date(new Date().setHours(0,0,0,0));
 }
 
 function formatDateUA(dateStr) {
   if (!dateStr) return '—';
   const d = new Date(dateStr);
-  return `${String(d.getDate()).padStart(2, '0')}.${String(d.getMonth() + 1).padStart(2, '0')}.${d.getFullYear()}`;
-}
-
-function toGoogleCalendarDate(dateStr) {
-  const d = new Date(dateStr);
-  const y = d.getFullYear();
-  const m = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
-  return `${y}${m}${day}`;
+  return `${String(d.getDate()).padStart(2,'0')}.${String(d.getMonth()+1).padStart(2,'0')}.${d.getFullYear()}`;
 }
 
 function openCalendarReminder(movie) {
-  const dateStr = toGoogleCalendarDate(movie.release_date);
-  const title = encodeURIComponent(`Прем'єра: ${movie.title}`);
-  const details = encodeURIComponent(movie.overview || '');
-  const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${dateStr}/${dateStr}&details=${details}`;
+  const d = new Date(movie.release_date);
+  const ds = `${d.getFullYear()}${String(d.getMonth()+1).padStart(2,'0')}${String(d.getDate()).padStart(2,'0')}`;
+  const url = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${encodeURIComponent("Прем'єра: "+movie.title)}&dates=${ds}/${ds}&details=${encodeURIComponent(movie.overview||'')}`;
   window.open(url, '_blank');
 }
 
 export default function VideoCard({ 
-  movie, 
-  active, 
-  isSaved, 
-  onToggleSave, 
-  isGlobalMuted, 
-  setIsGlobalMuted, 
-  isFirstVideo 
+  movie, active, isSaved, onToggleSave, 
+  isGlobalMuted, setIsGlobalMuted, isFirstVideo 
 }) {
   const iframeRef = useRef(null);
+  const [isPlaying, setIsPlaying] = useState(false);
   const [speedState, setSpeedState] = useState(1);
   const [copied, setCopied] = useState(false);
   const speeds = [1, 1.2, 1.5, 2];
-
   const upcoming = useMemo(() => isUpcoming(movie.release_date), [movie.release_date]);
 
   const thumbnailUrl = movie.trailerKey 
     ? `https://img.youtube.com/vi/${movie.trailerKey}/maxresdefault.jpg`
     : (movie.backdrop_path ? `https://image.tmdb.org/t/p/w1280${movie.backdrop_path}` : null);
 
-  // --- Send command to YouTube Iframe API via postMessage ---
   const sendCommand = (func, args = []) => {
     try {
-      if (iframeRef.current?.contentWindow) {
-        iframeRef.current.contentWindow.postMessage(
-          JSON.stringify({ event: 'command', func, args }), '*'
-        );
-      }
-    } catch (e) { /* cross-origin safe */ }
+      iframeRef.current?.contentWindow?.postMessage(
+        JSON.stringify({ event: 'command', func, args }), '*'
+      );
+    } catch (e) {}
   };
 
-  // --- When active: force play with retries + sync audio ---
+  // When card becomes active, try autoplay + set state
   useEffect(() => {
-    if (!active) return;
-    
-    // Force playVideo at multiple intervals to catch the iframe when it's ready
-    const t1 = setTimeout(() => sendCommand('playVideo'), 300);
-    const t2 = setTimeout(() => sendCommand('playVideo'), 800);
-    const t3 = setTimeout(() => sendCommand('playVideo'), 1500);
-    
-    // Sync mute state after player is likely ready
-    const tMute = setTimeout(() => {
-      sendCommand(isGlobalMuted ? 'mute' : 'unMute');
-    }, 600);
-
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-      clearTimeout(tMute);
-    };
+    if (!active) {
+      setIsPlaying(false);
+      return;
+    }
+    // Try to autoplay after iframe loads
+    const t1 = setTimeout(() => { sendCommand('playVideo'); setIsPlaying(true); }, 500);
+    const t2 = setTimeout(() => { sendCommand('playVideo'); }, 1200);
+    const tMute = setTimeout(() => sendCommand(isGlobalMuted ? 'mute' : 'unMute'), 700);
+    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(tMute); };
   }, [active, isGlobalMuted]);
 
-  // --- Handle Speed Changes ---
+  // --- Tap to play/pause ---
+  const handlePlayPause = () => {
+    if (isPlaying) {
+      sendCommand('pauseVideo');
+      setIsPlaying(false);
+    } else {
+      sendCommand('playVideo');
+      setIsPlaying(true);
+      if (!isGlobalMuted) sendCommand('unMute');
+    }
+  };
+
   const handleSpeedChange = () => {
     const nextSpeed = speeds[(speeds.indexOf(speedState) + 1) % speeds.length];
     setSpeedState(nextSpeed);
     sendCommand('setPlaybackRate', [nextSpeed]);
   };
 
-  // --- Toggle global mute ---
   const handleToggleMute = () => {
     const newMuted = !isGlobalMuted;
     setIsGlobalMuted(newMuted);
     sendCommand(newMuted ? 'mute' : 'unMute');
   };
 
-  // --- First-run overlay click (unmute) ---
   const handleOverlayUnmute = () => {
     setIsGlobalMuted(false);
     sendCommand('unMute');
     sendCommand('playVideo');
+    setIsPlaying(true);
   };
 
   const handleShare = () => {
     const url = movie.trailerKey 
       ? `https://www.youtube.com/watch?v=${movie.trailerKey}`
       : `https://www.themoviedb.org/movie/${movie.id}`;
-    
     if (navigator.share) {
-      navigator.share({
-        title: movie.title,
-        text: `Заціни цей трейлер: ${movie.title}`,
-        url: url
-      }).catch(() => fallbackCopy(url));
+      navigator.share({ title: movie.title, text: `Заціни: ${movie.title}`, url }).catch(() => fallbackCopy(url));
     } else {
       fallbackCopy(url);
     }
@@ -135,23 +110,11 @@ export default function VideoCard({
 
   const fallbackCopy = (url) => {
     navigator.clipboard?.writeText(url).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    }).catch(() => {
-      const textArea = document.createElement("textarea");
-      textArea.value = url;
-      document.body.appendChild(textArea);
-      textArea.select();
-      try { 
-        document.execCommand('copy'); 
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-      } catch (err) {}
-      document.body.removeChild(textArea);
-    });
+      setCopied(true); setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
   };
 
-  // --- No trailer fallback ---
+  // --- No trailer ---
   if (!movie.trailerKey) {
     return (
       <div className="relative w-full h-[100dvh] snap-start bg-black flex flex-col items-center justify-center overflow-hidden">
@@ -172,19 +135,15 @@ export default function VideoCard({
   return (
     <div className="relative w-full h-[100dvh] snap-start bg-black flex items-center justify-center overflow-hidden">
       
-      {/* 1. Ambient Background Effect */}
+      {/* 1. Ambient Background */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
         {thumbnailUrl && (
-          <img 
-            src={thumbnailUrl} 
-            alt="" 
-            className="w-full h-full object-cover opacity-70 blur-[70px] scale-125 saturate-[2]" 
-          />
+          <img src={thumbnailUrl} alt="" className="w-full h-full object-cover opacity-70 blur-[70px] scale-125 saturate-[2]" />
         )}
         <div className="absolute inset-0 bg-black/40"></div>
       </div>
 
-      {/* 2. Video Player — ONLY render iframe for active card */}
+      {/* 2. Video Player */}
       <div className="relative z-10 w-full h-full flex items-center justify-center pointer-events-none">
         {active ? (
           <iframe
@@ -197,12 +156,7 @@ export default function VideoCard({
           ></iframe>
         ) : (
           thumbnailUrl && (
-            <img 
-              src={thumbnailUrl} 
-              alt="" 
-              className="w-full aspect-video object-cover shadow-[0_0_50px_rgba(0,0,0,0.8)]" 
-              loading="lazy"
-            />
+            <img src={thumbnailUrl} alt="" className="w-full aspect-video object-cover shadow-[0_0_50px_rgba(0,0,0,0.8)]" loading="lazy" />
           )
         )}
       </div>
@@ -210,13 +164,31 @@ export default function VideoCard({
       {/* 3. Bottom Gradient */}
       <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/90 pointer-events-none z-20"></div>
 
-      {/* 4. First-run "Tap to unmute" overlay — only on first active video when muted */}
-      {active && isFirstVideo && isGlobalMuted && (
+      {/* 4. PLAY/PAUSE tap zone — covers the center of the video */}
+      {active && (
         <button
-          onClick={handleOverlayUnmute}
+          onClick={handlePlayPause}
+          className="absolute inset-0 z-25 pointer-events-auto"
+          style={{ zIndex: 25 }}
+        >
+          {/* Show play icon when paused */}
+          {!isPlaying && (
+            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+              <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur-xl flex items-center justify-center border border-white/30 animate-pulse">
+                <Play size={40} className="text-white ml-1" fill="white" />
+              </div>
+            </div>
+          )}
+        </button>
+      )}
+
+      {/* 5. First-run "Tap to unmute" overlay */}
+      {active && isFirstVideo && isGlobalMuted && isPlaying && (
+        <button
+          onClick={(e) => { e.stopPropagation(); handleOverlayUnmute(); }}
           className="absolute inset-0 z-40 flex items-center justify-center pointer-events-auto bg-black/30"
         >
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl px-8 py-5 flex flex-col items-center gap-3 shadow-[0_8px_40px_rgba(0,0,0,0.5)] animate-zoom-in">
+          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl px-8 py-5 flex flex-col items-center gap-3 shadow-[0_8px_40px_rgba(0,0,0,0.5)]">
             <div className="w-16 h-16 rounded-full bg-white/15 flex items-center justify-center border border-white/20">
               <VolumeX size={32} className="text-white/80" />
             </div>
@@ -226,38 +198,33 @@ export default function VideoCard({
         </button>
       )}
 
-      {/* TikTok Right Actions */}
+      {/* Right Actions */}
       <div className={`absolute right-3 bottom-20 flex flex-col items-center gap-4 z-30 pointer-events-auto transition-opacity duration-300 ${active ? 'opacity-100' : 'opacity-0'}`}>
-        {/* Save / Like */}
         <ActionBtn 
           icon={<Heart size={24} className={isSaved ? 'fill-rose-500 text-rose-500' : 'text-white'} />} 
           label={isSaved ? "У watchlist" : "Зберегти"} 
           onClick={onToggleSave} 
         />
         
-        {/* Upcoming → Remind Me | Normal → Speed */}
         {upcoming ? (
-          <ActionBtn 
-            icon={<Bell size={22} className="text-amber-400" />} 
-            label="Нагадати" 
-            onClick={() => openCalendarReminder(movie)} 
-          />
+          <ActionBtn icon={<Bell size={22} className="text-amber-400" />} label="Нагадати" onClick={() => openCalendarReminder(movie)} />
         ) : (
-          <ActionBtn 
-            icon={<div className="font-bold text-white text-sm">x{speedState}</div>} 
-            label="Швидкість" 
-            onClick={handleSpeedChange} 
-          />
+          <ActionBtn icon={<div className="font-bold text-white text-sm">x{speedState}</div>} label="Швидкість" onClick={handleSpeedChange} />
         )}
 
-        {/* Share */}
         <ActionBtn 
           icon={copied ? <CheckCircle2 size={22} className="text-emerald-400" /> : <Share2 size={22} className="text-white" />} 
           label={copied ? "Скопійовано" : "Поділитись"} 
           onClick={handleShare} 
         />
 
-        {/* Single Mute/Unmute button */}
+        {/* Play/Pause button */}
+        <ActionBtn 
+          icon={isPlaying ? <Pause size={20} className="text-white" /> : <Play size={20} className="text-white" fill="white" />} 
+          label={isPlaying ? "Пауза" : "Грати"} 
+          onClick={handlePlayPause} 
+        />
+
         <ActionBtn 
           icon={isGlobalMuted ? <VolumeX size={20} className="text-white/60" /> : <Volume2 size={20} className="text-white" />} 
           label={isGlobalMuted ? "Увімкнути" : "Вимкнути"} 
@@ -265,18 +232,15 @@ export default function VideoCard({
         />
       </div>
 
-      {/* TikTok Bottom Info */}
+      {/* Bottom Info */}
       <div className={`absolute bottom-4 left-4 right-20 z-30 flex flex-col gap-1.5 pointer-events-none text-white drop-shadow-lg transition-opacity duration-300 ${active ? 'opacity-100' : 'opacity-0'}`}>
-        {/* Coming Soon yellow badge */}
         {upcoming && (
           <span className="bg-yellow-400 text-black px-2 py-0.5 rounded text-[10px] font-bold self-start mb-0.5">
             Вихід: {formatDateUA(movie.release_date)}
           </span>
         )}
-
         <h2 className="text-2xl font-bold leading-tight drop-shadow-md">{movie.title}</h2>
         <p className="text-sm text-white/90 line-clamp-3 font-medium drop-shadow-md">{movie.overview}</p>
-        
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs font-semibold text-white/90">
           <span className="flex items-center gap-1">
             <Star size={12} className="text-yellow-400 fill-yellow-400" /> 
@@ -284,12 +248,7 @@ export default function VideoCard({
           </span>
           <span>•</span>
           <span>{movie.release_date?.split('-')[0] || movie.year || '—'}</span>
-          {movie.country && (
-            <>
-              <span>•</span>
-              <span>{movie.country}</span>
-            </>
-          )}
+          {movie.country && (<><span>•</span><span>{movie.country}</span></>)}
         </div>
         {movie.director && (
           <div className="text-[11px] text-white/70 font-medium drop-shadow-md">Реж: {movie.director}</div>
