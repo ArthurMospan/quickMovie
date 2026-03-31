@@ -10,13 +10,14 @@ export default function AISearchTab({ onWatchTrailer }) {
   const [error, setError] = useState('');
 
   const handleAISearch = async () => {
-    if (!query.trim()) return;
+    if (loading || !query.trim()) return;
     setLoading(true);
     setError('');
     setResult(null);
     
     try {
       // 1. Ask Gemini to guess the movie
+      console.log('Gemini Request Started at:', new Date().toISOString());
       const geminiAnswer = await guessMovieFromDescription(query);
       
       if (geminiAnswer.includes('Не вдалося розпізнати')) {
