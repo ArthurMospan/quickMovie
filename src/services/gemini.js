@@ -11,7 +11,11 @@ const callBackendProxy = async (description) => {
 
     if (!response.ok) {
         const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.error || `Backend error: ${response.status}`);
+        const status = response.status;
+        if (status === 429) {
+          throw new Error('429: Rate Limit. Try again in 5s.');
+        }
+        throw new Error(errData.error || `Backend error: ${status}`);
     }
 
     const data = await response.json();
@@ -31,8 +35,8 @@ const callGeminiDirect = async (description) => {
         Якщо за описом підходить кілька, напиши найвідоміший. Якщо взагалі незрозуміло, напиши "Не вдалося розпізнати фільм". 
         Не пиши ніякого іншого тексту, привітань чи пояснень.`;
 
-    // Add jitter to reduce 429s
-    await jitter();
+    // Add jitter to reduce 429s (600ms for safety)
+    await new Promise(r => setTimeout(r, 600));
 
     const response = await fetch(url, {
         method: 'POST',
