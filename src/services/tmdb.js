@@ -67,36 +67,61 @@ export const discoverTV = async (page = 1) => {
   });
 };
 
-// --- Discover with Filters ---
+// --- Discover with Filters (with fallback logic) ---
 export const discoverWithFilters = async ({ type = 'movie', genreId, country, minRating, personId, yearFrom, yearTo, page = 1 }) => {
   const endpoint = type === 'series' ? '/discover/tv' : '/discover/movie';
-  const params = {
-    sort_by: 'popularity.desc',
-    page,
-    include_adult: false,
-    language: 'uk-UA',
+
+  const buildParams = (opts = {}) => {
+    const params = {
+      sort_by: 'popularity.desc',
+      page,
+      include_adult: false,
+      language: 'uk-UA',
+    };
+
+    if (genreId) params.with_genres = genreId;
+    if (country) params.with_origin_country = country;
+    if (minRating && minRating > 0) params['vote_average.gte'] = minRating;
+
+    if (personId && !opts.skipPerson) {
+      if (type !== 'series') {
+        params.with_people = personId;
+      }
+    }
+
+    if (!opts.skipYear) {
+      if (yearFrom) {
+        const dateKey = type === 'series' ? 'first_air_date.gte' : 'primary_release_date.gte';
+        params[dateKey] = `${yearFrom}-01-01`;
+      }
+      if (yearTo) {
+        const dateKey = type === 'series' ? 'first_air_date.lte' : 'primary_release_date.lte';
+        params[dateKey] = `${yearTo}-12-31`;
+      }
+    }
+
+    return params;
   };
 
-  if (genreId) params.with_genres = genreId;
-  if (country) params.with_origin_country = country;
-  if (minRating && minRating > 0) params['vote_average.gte'] = minRating;
+  // Try 1: Full filters
+  let data = await fetchFromTMDB(endpoint, buildParams());
+  if (data.results && data.results.length > 0) return data;
+
+  // Try 2: Drop year constraints
+  if (yearFrom || yearTo) {
+    console.warn('Filters fallback: removing year range');
+    data = await fetchFromTMDB(endpoint, buildParams({ skipYear: true }));
+    if (data.results && data.results.length > 0) return data;
+  }
+
+  // Try 3: Drop person + year constraints
   if (personId) {
-    if (type !== 'series') {
-      params.with_people = personId;
-    }
+    console.warn('Filters fallback: removing person filter');
+    data = await fetchFromTMDB(endpoint, buildParams({ skipYear: true, skipPerson: true }));
+    if (data.results && data.results.length > 0) return data;
   }
 
-  // Year range
-  if (yearFrom) {
-    const dateKey = type === 'series' ? 'first_air_date.gte' : 'primary_release_date.gte';
-    params[dateKey] = `${yearFrom}-01-01`;
-  }
-  if (yearTo) {
-    const dateKey = type === 'series' ? 'first_air_date.lte' : 'primary_release_date.lte';
-    params[dateKey] = `${yearTo}-12-31`;
-  }
-
-  return fetchFromTMDB(endpoint, params);
+  return data; // Return whatever we got
 };
 
 // --- Movie Details with Videos ---

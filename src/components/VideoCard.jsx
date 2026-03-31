@@ -4,10 +4,10 @@ import { Heart, Share2, Star, CheckCircle2, VolumeX, Volume2, Bell } from 'lucid
 function ActionBtn({ icon, label, onClick }) {
   return (
     <button onClick={onClick} className="flex flex-col items-center gap-1 group active:scale-90 transition-transform">
-      <div className="w-12 h-12 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/10 group-hover:bg-white/20 transition-colors">
+      <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/10 group-hover:bg-white/20 transition-colors">
         {icon}
       </div>
-      <span className="text-[10px] font-bold text-white drop-shadow-md">{label}</span>
+      <span className="text-[9px] font-bold text-white drop-shadow-md">{label}</span>
     </button>
   );
 }
@@ -65,11 +65,26 @@ export default function VideoCard({ movie, active, isSaved, onToggleSave, isGlob
     }
   };
 
-  // --- When this card becomes active & global is unmuted, auto-unmute ---
+  // --- Send playVideo command to force autoplay ---
+  const sendPlayCommand = () => {
+    if (iframeRef.current?.contentWindow) {
+      iframeRef.current.contentWindow.postMessage(
+        JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*'
+      );
+    }
+  };
+
+  // --- When this card becomes active: force play + handle audio ---
   useEffect(() => {
-    if (active && !isGlobalMuted) {
-      const timer = setTimeout(() => sendMuteCommand(false), 800);
-      return () => clearTimeout(timer);
+    if (active) {
+      // Force play after small delay to ensure iframe is ready
+      const playTimer = setTimeout(() => sendPlayCommand(), 200);
+
+      if (!isGlobalMuted) {
+        const muteTimer = setTimeout(() => sendMuteCommand(false), 800);
+        return () => { clearTimeout(playTimer); clearTimeout(muteTimer); };
+      }
+      return () => clearTimeout(playTimer);
     }
   }, [active, isGlobalMuted]);
 
@@ -171,7 +186,7 @@ export default function VideoCard({ movie, active, isSaved, onToggleSave, isGlob
             className="w-full aspect-video shadow-[0_0_50px_rgba(0,0,0,0.8)]"
             src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&loop=1&playlist=${movie.trailerKey}&enablejsapi=1`}
             frameBorder="0" 
-            allow="autoplay; encrypted-media; picture-in-picture"
+            allow="autoplay; encrypted-media; picture-in-picture; accelerometer; gyroscope"
             loading="lazy"
           ></iframe>
         ) : (
@@ -206,10 +221,10 @@ export default function VideoCard({ movie, active, isSaved, onToggleSave, isGlob
       )}
 
       {/* TikTok Right Actions */}
-      <div className="absolute right-4 bottom-28 flex flex-col items-center gap-5 z-30 pointer-events-auto">
+      <div className="absolute right-3 bottom-20 flex flex-col items-center gap-4 z-30 pointer-events-auto">
         {/* Save / Like */}
         <ActionBtn 
-          icon={<Heart size={28} className={isSaved ? 'fill-rose-500 text-rose-500' : 'text-white'} />} 
+          icon={<Heart size={24} className={isSaved ? 'fill-rose-500 text-rose-500' : 'text-white'} />} 
           label={isSaved ? "У watchlist" : "Зберегти"} 
           onClick={onToggleSave} 
         />
@@ -217,7 +232,7 @@ export default function VideoCard({ movie, active, isSaved, onToggleSave, isGlob
         {/* Upcoming → Remind Me | Normal → Speed */}
         {upcoming ? (
           <ActionBtn 
-            icon={<Bell size={26} className="text-amber-400" />} 
+            icon={<Bell size={22} className="text-amber-400" />} 
             label="Нагадати" 
             onClick={() => openCalendarReminder(movie)} 
           />
@@ -231,21 +246,21 @@ export default function VideoCard({ movie, active, isSaved, onToggleSave, isGlob
 
         {/* Share */}
         <ActionBtn 
-          icon={copied ? <CheckCircle2 size={26} className="text-emerald-400" /> : <Share2 size={26} className="text-white" />} 
+          icon={copied ? <CheckCircle2 size={22} className="text-emerald-400" /> : <Share2 size={22} className="text-white" />} 
           label={copied ? "Скопійовано" : "Поділитись"} 
           onClick={handleShare} 
         />
 
         {/* Single Mute/Unmute button */}
         <ActionBtn 
-          icon={isGlobalMuted ? <VolumeX size={24} className="text-white/60" /> : <Volume2 size={24} className="text-white" />} 
+          icon={isGlobalMuted ? <VolumeX size={20} className="text-white/60" /> : <Volume2 size={20} className="text-white" />} 
           label={isGlobalMuted ? "Увімкнути" : "Вимкнути"} 
           onClick={handleToggleMute} 
         />
       </div>
 
       {/* TikTok Bottom Info */}
-      <div className="absolute bottom-8 left-5 right-22 z-30 flex flex-col gap-1.5 pointer-events-none text-white drop-shadow-lg">
+      <div className="absolute bottom-4 left-4 right-20 z-30 flex flex-col gap-1.5 pointer-events-none text-white drop-shadow-lg">
         {/* Coming Soon yellow badge */}
         {upcoming && (
           <span className="bg-yellow-400 text-black px-2 py-0.5 rounded text-[10px] font-bold self-start mb-0.5">
