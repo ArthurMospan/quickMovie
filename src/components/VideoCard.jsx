@@ -43,7 +43,16 @@ function openCalendarReminder(movie) {
   window.open(url, '_blank');
 }
 
-export default function VideoCard({ movie, active, isSaved, onToggleSave, isGlobalMuted, setIsGlobalMuted, isFirstVideo }) {
+export default function VideoCard({ 
+  movie, 
+  active, 
+  shouldRenderPlayer, 
+  isSaved, 
+  onToggleSave, 
+  isGlobalMuted, 
+  setIsGlobalMuted, 
+  isFirstVideo 
+}) {
   const iframeRef = useRef(null);
   const [speedState, setSpeedState] = useState(1);
   const [copied, setCopied] = useState(false);
@@ -55,76 +64,65 @@ export default function VideoCard({ movie, active, isSaved, onToggleSave, isGlob
     ? `https://img.youtube.com/vi/${movie.trailerKey}/maxresdefault.jpg`
     : (movie.backdrop_path ? `https://image.tmdb.org/t/p/w1280${movie.backdrop_path}` : null);
 
-  // --- Send mute/unmute command to iframe ---
-  const sendMuteCommand = (mute) => {
+  // --- Send command to YouTube Iframe API via postMessage ---
+  const sendCommand = (func, args = []) => {
     try {
       if (iframeRef.current?.contentWindow) {
         iframeRef.current.contentWindow.postMessage(
-          JSON.stringify({ event: 'command', func: mute ? 'mute' : 'unMute', args: [] }), '*'
+          JSON.stringify({ event: 'command', func, args }), '*'
         );
       }
-    } catch (e) { /* cross-origin safe */ }
+    } catch (e) {
+      // Cross-origin issues or iframe not ready
+    }
   };
 
-  // --- Send playVideo command to force autoplay ---
-  const sendPlayCommand = () => {
-    try {
-      if (iframeRef.current?.contentWindow) {
-        iframeRef.current.contentWindow.postMessage(
-          JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*'
-        );
-      }
-    } catch (e) { /* cross-origin safe */ }
-  };
-
-  // --- When this card becomes active: force play with retries + handle audio ---
+  // --- Manage Playback and Audio Lifecycle ---
   useEffect(() => {
-    if (!active) return;
+    if (!shouldRenderPlayer) return;
 
-    // Triple retry for mobile Safari/Chrome which may ignore first postMessage
-    const t1 = setTimeout(() => {
-      sendPlayCommand();
-      if (!isGlobalMuted) sendMuteCommand(false);
-    }, 200);
+    if (active) {
+      // 1. Force Play with retries (critical for mobile after swipe)
+      const playCommands = [100, 500, 1000].map(delay => 
+        setTimeout(() => sendCommand('playVideo'), delay)
+      );
+      
+      // 2. Sync Mute State
+      const muteTimer = setTimeout(() => {
+        sendCommand(isGlobalMuted ? 'mute' : 'unMute');
+      }, 800);
 
-    const t2 = setTimeout(() => {
-      sendPlayCommand();
-      if (!isGlobalMuted) sendMuteCommand(false);
-    }, 600);
+      return () => {
+        playCommands.forEach(t => clearTimeout(t));
+        clearTimeout(muteTimer);
+      };
+    } else {
+      // Pause and Mute non-active players that are pre-rendered
+      sendCommand('pauseVideo');
+      sendCommand('mute');
+    }
+  }, [active, shouldRenderPlayer, isGlobalMuted]);
 
-    const t3 = setTimeout(() => {
-      sendPlayCommand();
-      if (!isGlobalMuted) sendMuteCommand(false);
-    }, 1200);
-
-    return () => {
-      clearTimeout(t1);
-      clearTimeout(t2);
-      clearTimeout(t3);
-    };
-  }, [active, isGlobalMuted]);
+  // --- Handle Speed Changes ---
+  const handleSpeedChange = () => {
+    const nextSpeed = speeds[(speeds.indexOf(speedState) + 1) % speeds.length];
+    setSpeedState(nextSpeed);
+    sendCommand('setPlaybackRate', [nextSpeed]);
+  };
 
   // --- Toggle global mute ---
   const handleToggleMute = () => {
     const newMuted = !isGlobalMuted;
     setIsGlobalMuted(newMuted);
-    sendMuteCommand(newMuted);
+    // Directly send command to current active iframe for immediate feedback
+    sendCommand(newMuted ? 'mute' : 'unMute');
   };
 
   // --- First-run overlay click (unmute) ---
   const handleOverlayUnmute = () => {
     setIsGlobalMuted(false);
-    sendMuteCommand(false);
-  };
-
-  const handleSpeedChange = () => {
-    const nextSpeed = speeds[(speeds.indexOf(speedState) + 1) % speeds.length];
-    setSpeedState(nextSpeed);
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage(
-        JSON.stringify({ event: 'command', func: 'setPlaybackRate', args: [nextSpeed] }), '*'
-      );
-    }
+    sendCommand('unMute');
+    sendCommand('playVideo');
   };
 
   const handleShare = () => {
@@ -196,15 +194,14 @@ export default function VideoCard({ movie, active, isSaved, onToggleSave, isGlob
 
       {/* 2. Video Player */}
       <div className="relative z-10 w-full h-full flex items-center justify-center pointer-events-none">
-        {active ? (
+        {shouldRenderPlayer ? (
           <iframe
             ref={iframeRef}
-            className="w-full aspect-video shadow-[0_0_50px_rgba(0,0,0,0.8)]"
+            className={`w-full aspect-video shadow-[0_0_50px_rgba(0,0,0,0.8)] transition-opacity duration-500 ${active ? 'opacity-100' : 'opacity-0'}`}
             src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&loop=1&playlist=${movie.trailerKey}&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`}
             frameBorder="0" 
             allow="autoplay; encrypted-media; picture-in-picture; accelerometer; gyroscope"
             allowFullScreen
-            referrerPolicy="no-referrer-when-downgrade"
           ></iframe>
         ) : (
           thumbnailUrl && (
@@ -238,7 +235,7 @@ export default function VideoCard({ movie, active, isSaved, onToggleSave, isGlob
       )}
 
       {/* TikTok Right Actions */}
-      <div className="absolute right-3 bottom-20 flex flex-col items-center gap-4 z-30 pointer-events-auto">
+      <div className={`absolute right-3 bottom-20 flex flex-col items-center gap-4 z-30 pointer-events-auto transition-opacity duration-300 ${active ? 'opacity-100' : 'opacity-0'}`}>
         {/* Save / Like */}
         <ActionBtn 
           icon={<Heart size={24} className={isSaved ? 'fill-rose-500 text-rose-500' : 'text-white'} />} 
@@ -277,7 +274,7 @@ export default function VideoCard({ movie, active, isSaved, onToggleSave, isGlob
       </div>
 
       {/* TikTok Bottom Info */}
-      <div className="absolute bottom-4 left-4 right-20 z-30 flex flex-col gap-1.5 pointer-events-none text-white drop-shadow-lg">
+      <div className={`absolute bottom-4 left-4 right-20 z-30 flex flex-col gap-1.5 pointer-events-none text-white drop-shadow-lg transition-opacity duration-300 ${active ? 'opacity-100' : 'opacity-0'}`}>
         {/* Coming Soon yellow badge */}
         {upcoming && (
           <span className="bg-yellow-400 text-black px-2 py-0.5 rounded text-[10px] font-bold self-start mb-0.5">
