@@ -57,35 +57,51 @@ export default function VideoCard({ movie, active, isSaved, onToggleSave, isGlob
 
   // --- Send mute/unmute command to iframe ---
   const sendMuteCommand = (mute) => {
-    if (iframeRef.current?.contentWindow) {
-      const func = mute ? 'mute' : 'unMute';
-      iframeRef.current.contentWindow.postMessage(
-        JSON.stringify({ event: 'command', func, args: [] }), '*'
-      );
-    }
+    try {
+      if (iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: 'command', func: mute ? 'mute' : 'unMute', args: [] }), '*'
+        );
+      }
+    } catch (e) { /* cross-origin safe */ }
   };
 
   // --- Send playVideo command to force autoplay ---
   const sendPlayCommand = () => {
-    if (iframeRef.current?.contentWindow) {
-      iframeRef.current.contentWindow.postMessage(
-        JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*'
-      );
-    }
+    try {
+      if (iframeRef.current?.contentWindow) {
+        iframeRef.current.contentWindow.postMessage(
+          JSON.stringify({ event: 'command', func: 'playVideo', args: [] }), '*'
+        );
+      }
+    } catch (e) { /* cross-origin safe */ }
   };
 
-  // --- When this card becomes active: force play + handle audio ---
+  // --- When this card becomes active: force play with retries + handle audio ---
   useEffect(() => {
-    if (active) {
-      // Force play after small delay to ensure iframe is ready
-      const playTimer = setTimeout(() => sendPlayCommand(), 200);
+    if (!active) return;
 
-      if (!isGlobalMuted) {
-        const muteTimer = setTimeout(() => sendMuteCommand(false), 800);
-        return () => { clearTimeout(playTimer); clearTimeout(muteTimer); };
-      }
-      return () => clearTimeout(playTimer);
-    }
+    // Triple retry for mobile Safari/Chrome which may ignore first postMessage
+    const t1 = setTimeout(() => {
+      sendPlayCommand();
+      if (!isGlobalMuted) sendMuteCommand(false);
+    }, 200);
+
+    const t2 = setTimeout(() => {
+      sendPlayCommand();
+      if (!isGlobalMuted) sendMuteCommand(false);
+    }, 600);
+
+    const t3 = setTimeout(() => {
+      sendPlayCommand();
+      if (!isGlobalMuted) sendMuteCommand(false);
+    }, 1200);
+
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      clearTimeout(t3);
+    };
   }, [active, isGlobalMuted]);
 
   // --- Toggle global mute ---
@@ -184,10 +200,11 @@ export default function VideoCard({ movie, active, isSaved, onToggleSave, isGlob
           <iframe
             ref={iframeRef}
             className="w-full aspect-video shadow-[0_0_50px_rgba(0,0,0,0.8)]"
-            src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&loop=1&playlist=${movie.trailerKey}&enablejsapi=1`}
+            src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&loop=1&playlist=${movie.trailerKey}&enablejsapi=1&origin=${encodeURIComponent(window.location.origin)}`}
             frameBorder="0" 
             allow="autoplay; encrypted-media; picture-in-picture; accelerometer; gyroscope"
-            loading="lazy"
+            allowFullScreen
+            referrerPolicy="no-referrer-when-downgrade"
           ></iframe>
         ) : (
           thumbnailUrl && (
