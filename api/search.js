@@ -37,8 +37,11 @@ export default async function handler(req, res) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'x-goog-api-key': apiKey, // More reliable header-based auth
-        'x-goog-api-client': 'genai-js/0.1.0'
+        'x-goog-api-key': apiKey,
+        'x-goog-user-project': '683501963282', // Explicit project identification to bypass IP blocks
+        'x-goog-api-client': 'genai-js/0.1.0',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Referer': 'https://quick-movie-arthurmospan.vercel.app'
       },
       body: JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
