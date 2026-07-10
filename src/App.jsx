@@ -13,11 +13,13 @@ import {
   getCreditsInfo 
 } from './services/tmdb';
 import { 
-  auth, 
+  getTelegramUser,
+  ensureUserDoc,
   subscribeToUser, 
   subscribeToPartner, 
   toggleSaveMovie,
-  toggleMovieWatched
+  toggleMovieWatched,
+  updateUserPartnerId
 } from './services/firebase';
 import { SlidersHorizontal, Film } from 'lucide-react';
 
@@ -37,9 +39,9 @@ export default function App() {
   const isFetching = useRef(false);
   const feedScrollPos = useRef(0); // Preserve scroll position
 
-  // --- Firebase Auth & Data ---
+  // --- Telegram User & Data ---
   const [user, setUser] = useState(null);
-  const [userData, setUserData] = useState({ saves: [], watched: [] });
+  const [userData, setUserData] = useState({ saves: [], watched: [], partnerId: '' });
   const [partnerId, setPartnerId] = useState('');
   const [partnerData, setPartnerData] = useState({ saves: [], watched: [] });
 
@@ -62,25 +64,39 @@ export default function App() {
     yearTo: null
   });
 
-  // --- Auth Listener ---
+  // --- Init Telegram User ---
   useEffect(() => {
-    const unsubscribe = auth.onAuthStateChanged((u) => {
-      setUser(u);
-      const savedPartner = localStorage.getItem('qw_partner_id');
-      if (savedPartner) setPartnerId(savedPartner);
-    });
-    return () => unsubscribe();
+    const initUser = async () => {
+      const tgUser = getTelegramUser();
+      if (tgUser) {
+        setUser(tgUser);
+        await ensureUserDoc(tgUser.uid);
+      } else {
+        // Look for a locally generated dev ID if not in TG? 
+        // For now, if not in Telegram, they just can't save.
+        console.log("No Telegram user found. App running in anonymous mode.");
+      }
+    };
+    initUser();
   }, []);
 
   // --- User Data Subscription ---
   useEffect(() => {
     if (!user) {
-      setUserData({ saves: [], watched: [] });
+      setUserData({ saves: [], watched: [], partnerId: '' });
       return;
     }
     const unsub = subscribeToUser(user.uid, (docSnap) => {
       if (docSnap.exists()) {
-        setUserData(docSnap.data());
+        const data = docSnap.data();
+        setUserData(data);
+        if (data.partnerId) {
+          setPartnerId(data.partnerId);
+        } else {
+          // If Firestore partnerId is empty, try local storage fallback
+          const localPartner = localStorage.getItem('qw_partner_id');
+          if (localPartner) setPartnerId(localPartner);
+        }
       }
     });
     return () => unsub();
@@ -102,10 +118,13 @@ export default function App() {
     return () => unsub();
   }, [partnerId]);
 
-  // --- Set Partner ID (with localStorage persistence) ---
-  const handleSetPartnerId = (id) => {
+  // --- Set Partner ID ---
+  const handleSetPartnerId = async (id) => {
     setPartnerId(id);
     localStorage.setItem('qw_partner_id', id);
+    if (user?.uid) {
+      await updateUserPartnerId(user.uid, id);
+    }
   };
 
   // --- Load Movies from TMDB ---

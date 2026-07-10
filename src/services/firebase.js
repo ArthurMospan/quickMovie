@@ -1,5 +1,4 @@
 import { initializeApp } from 'firebase/app';
-import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from 'firebase/auth';
 import { getFirestore, doc, setDoc, getDoc, updateDoc, arrayUnion, arrayRemove, onSnapshot } from 'firebase/firestore';
 
 const firebaseConfig = {
@@ -13,31 +12,42 @@ const firebaseConfig = {
 };
 
 const app = initializeApp(firebaseConfig);
-export const auth = getAuth(app);
 export const db = getFirestore(app);
-export const googleProvider = new GoogleAuthProvider();
 
-// --- Auth ---
-export const loginWithGoogle = async () => {
+// --- Telegram User Helpers ---
+
+// Get Telegram user from WebApp SDK
+export const getTelegramUser = () => {
   try {
-    const result = await signInWithPopup(auth, googleProvider);
-    const userDocRef = doc(db, 'users', result.user.uid);
-    const docSnap = await getDoc(userDocRef);
-    if (!docSnap.exists()) {
-      await setDoc(userDocRef, {
-        saves: [],
-        watched: [],
-        partnerId: ""
-      });
+    const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+    if (tgUser && tgUser.id) {
+      return {
+        uid: `tg_${tgUser.id}`,
+        tgId: tgUser.id,
+        displayName: [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ') || 'Користувач',
+        username: tgUser.username || null,
+        photoURL: tgUser.photo_url || null
+      };
     }
-    return result.user;
-  } catch (error) {
-    console.error("Error signing in with Google", error);
-    throw error;
+  } catch (e) {
+    console.warn('[TG] Could not get Telegram user:', e);
   }
+  return null;
 };
 
-export const logout = () => signOut(auth);
+// Ensure user document exists in Firestore
+export const ensureUserDoc = async (uid) => {
+  if (!uid) return;
+  const userDocRef = doc(db, 'users', uid);
+  const docSnap = await getDoc(userDocRef);
+  if (!docSnap.exists()) {
+    await setDoc(userDocRef, {
+      saves: [],
+      watched: [],
+      partnerId: ""
+    });
+  }
+};
 
 // --- User Data Subscription ---
 export const subscribeToUser = (uid, callback) => {
@@ -47,7 +57,7 @@ export const subscribeToUser = (uid, callback) => {
 
 // --- Partner Subscription ---
 export const subscribeToPartner = (partnerId, callback) => {
-  if (!partnerId || partnerId.length < 5) return () => {};
+  if (!partnerId || partnerId.length < 3) return () => {};
   return onSnapshot(doc(db, 'users', partnerId), callback, (err) => {
     console.error("Partner subscription error:", err);
   });
