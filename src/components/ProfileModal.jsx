@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { XCircle, Users, Smartphone } from 'lucide-react';
+import { XCircle, Users, Smartphone, Share2 } from 'lucide-react';
 
 export default function ProfileModal({ onClose, user, userData, partnerId, setPartnerId }) {
   const [inputId, setInputId] = useState(partnerId || '');
@@ -47,7 +47,7 @@ export default function ProfileModal({ onClose, user, userData, partnerId, setPa
         {user ? (
           <div className="bg-white/5 rounded-2xl border border-white/5 p-4 mb-5 flex items-center gap-3">
             {user.photoURL ? (
-              <img src={user.photoURL} alt="" className="w-10 h-10 rounded-full border border-white/20" />
+              <img src={user.photoURL} alt="" referrerPolicy="no-referrer" className="w-10 h-10 rounded-full border border-white/20" />
             ) : (
               <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-zinc-800 to-black flex items-center justify-center text-white font-bold text-sm">
                 {user.displayName?.charAt(0) || '?'}

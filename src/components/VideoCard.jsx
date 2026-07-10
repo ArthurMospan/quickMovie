@@ -149,7 +149,7 @@ export default function VideoCard({
           <iframe
             ref={iframeRef}
             className="w-full aspect-video shadow-[0_0_50px_rgba(0,0,0,0.8)]"
-            src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&loop=1&playlist=${movie.trailerKey}&enablejsapi=1`}
+            src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&loop=1&playlist=${movie.trailerKey}&enablejsapi=1&disablekb=1&fs=0&iv_load_policy=3`}
             frameBorder="0" 
             allow="autoplay; encrypted-media; picture-in-picture; accelerometer; gyroscope"
             allowFullScreen

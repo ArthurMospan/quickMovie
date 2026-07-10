@@ -43,7 +43,7 @@ export default function TopNav({ activeTab, setActiveTab, onProfileClick, userPh
         className="pointer-events-auto rounded-full w-10 h-10 bg-gradient-to-tr from-zinc-800 to-zinc-950 border border-white/20 hover:scale-105 active:scale-95 transition-all flex items-center justify-center overflow-hidden shadow-lg"
       >
         {userPhotoURL ? (
-          <img src={userPhotoURL} alt="Avatar" className="w-full h-full object-cover" />
+          <img src={userPhotoURL} alt="Avatar" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
         ) : (
           <User size={18} className="text-white drop-shadow-md" />
         )}

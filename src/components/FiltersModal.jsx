@@ -81,21 +81,50 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
     { code: 'TR', name: 'Туреччина' },
   ];
 
+  const [touchStart, setTouchStart] = useState(null);
+
+  const handleTouchStart = (e) => {
+    setTouchStart(e.touches[0].clientY);
+  };
+
+  const handleTouchMove = (e) => {
+    if (touchStart === null) return;
+    const currentY = e.touches[0].clientY;
+    const diff = currentY - touchStart;
+    if (diff > 40) {
+      onClose();
+      setTouchStart(null);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    setTouchStart(null);
+  };
+
   return (
     <div className="absolute inset-0 z-50 flex items-end justify-center">
       <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
       <div className="relative w-full bg-[#111] border-t border-white/10 rounded-t-3xl p-6 pb-8 flex flex-col max-h-[85vh] animate-in">
-        {/* Handle bar */}
-        <div className="w-10 h-1.5 bg-white/20 rounded-full mx-auto mb-5 shrink-0"></div>
         
-        {/* Header */}
-        <div className="flex items-center justify-between mb-5 shrink-0">
-          <h2 className="text-lg font-bold text-white flex items-center gap-2">
-            <SlidersHorizontal size={18} /> Фільтри
-          </h2>
-          <button onClick={handleReset} className="text-xs text-white/40 hover:text-white/70 font-semibold uppercase tracking-wider transition-colors">
-            Скинути
-          </button>
+        {/* Header + Swipe Handle Area */}
+        <div 
+          className="shrink-0 pb-2"
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          {/* Handle bar */}
+          <div className="w-10 h-1.5 bg-white/20 rounded-full mx-auto mb-5"></div>
+          
+          {/* Header text */}
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-lg font-bold text-white flex items-center gap-2">
+              <SlidersHorizontal size={18} /> Фільтри
+            </h2>
+            <button onClick={handleReset} className="text-xs text-white/40 hover:text-white/70 font-semibold uppercase tracking-wider transition-colors">
+              Скинути
+            </button>
+          </div>
         </div>
 
         <div className="flex-1 overflow-y-auto space-y-6 scrollbar-hide pr-1">

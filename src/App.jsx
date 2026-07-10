@@ -369,7 +369,19 @@ export default function App() {
           style={{ top: 'calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 120px)' }}
         >
           <SlidersHorizontal size={12} className="text-white/70" />
-          <span className="text-[10px] font-bold text-white/70 tracking-widest uppercase">Фільтри</span>
+          <span className="text-[10px] font-bold text-white/70 tracking-widest uppercase">
+            Фільтри
+            {(() => {
+              let count = 0;
+              if (filters.type !== 'all') count++;
+              if (filters.genreId) count++;
+              if (filters.country) count++;
+              if (filters.minRating > 0) count++;
+              if (filters.personId) count++;
+              if (filters.yearFrom || filters.yearTo) count++;
+              return count > 0 ? ` (${count})` : '';
+            })()}
+          </span>
         </button>
       </div>
 
