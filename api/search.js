@@ -16,9 +16,7 @@ async function fetchWithRetry(url, options, maxRetries = 3) {
 
 // Try multiple models in order of preference
 const MODELS = [
-  'gemini-2.0-flash-lite',
-  'gemini-2.0-flash', 
-  'gemini-1.5-flash'
+  'gemini-2.5-flash'
 ];
 
 export default async function handler(req, res) {

@@ -29,8 +29,8 @@ const callGeminiDirect = async (description) => {
 
     console.log('[AI Search] Trying direct Gemini call...');
 
-    // Try lighter model first
-    const models = ['gemini-2.0-flash-lite', 'gemini-2.0-flash'];
+    // Try latest model
+    const models = ['gemini-2.5-flash'];
     
     for (const model of models) {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;

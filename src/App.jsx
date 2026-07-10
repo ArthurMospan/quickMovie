@@ -21,8 +21,8 @@ import {
 } from './services/firebase';
 import { SlidersHorizontal, Film } from 'lucide-react';
 
-// Random start page for variety (1–10)
-const getRandomStartPage = () => Math.floor(Math.random() * 5) + 1;
+// Random start page for variety (1-500 max allowed by TMDB)
+const getRandomStartPage = () => Math.floor(Math.random() * 500) + 1;
 
 export default function App() {
   // --- Tab State ---

@@ -128,7 +128,8 @@ export const discoverWithFilters = async ({ type = 'movie', genreId, country, mi
 export const getMovieDetailsWithVideos = async (id) => {
   return fetchFromTMDB(`/movie/${id}`, {
     append_to_response: 'videos,credits',
-    language: 'uk-UA'
+    language: 'uk-UA',
+    include_video_language: 'uk,en,null'
   });
 };
 
@@ -136,7 +137,8 @@ export const getMovieDetailsWithVideos = async (id) => {
 export const getTVDetailsWithVideos = async (id) => {
   return fetchFromTMDB(`/tv/${id}`, {
     append_to_response: 'videos,credits',
-    language: 'uk-UA'
+    language: 'uk-UA',
+    include_video_language: 'uk,en,null'
   });
 };
 
