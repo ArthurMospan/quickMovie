@@ -356,7 +356,8 @@ export default function App() {
         {/* Filter Button (floating, subtle) */}
         <button 
           onClick={() => setShowFilters(true)}
-          className="absolute top-[70px] left-1/2 -translate-x-1/2 z-30 bg-black/20 backdrop-blur-md border border-white/5 px-3 py-1.5 rounded-full flex items-center gap-1.5 active:scale-95 transition-transform opacity-60 hover:opacity-100"
+          className="absolute left-1/2 -translate-x-1/2 z-30 bg-black/20 backdrop-blur-md border border-white/5 px-3 py-1.5 rounded-full flex items-center gap-1.5 active:scale-95 transition-transform opacity-60 hover:opacity-100"
+          style={{ top: 'calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 120px)' }}
         >
           <SlidersHorizontal size={12} className="text-white/70" />
           <span className="text-[10px] font-bold text-white/70 tracking-widest uppercase">Фільтри</span>

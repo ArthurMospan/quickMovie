@@ -13,7 +13,10 @@ function TabButton({ children, active, onClick }) {
 
 export default function TopNav({ activeTab, setActiveTab, onProfileClick, userPhotoURL }) {
   return (
-    <div className="absolute top-0 left-0 right-0 z-40 flex justify-between items-center px-6 pt-14 pb-4 bg-gradient-to-b from-black/80 via-black/40 to-transparent pointer-events-none">
+    <div 
+      className="absolute top-0 left-0 right-0 z-40 flex justify-between items-center px-6 pb-4 bg-gradient-to-b from-black/90 via-black/50 to-transparent pointer-events-none"
+      style={{ paddingTop: 'calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 64px)' }}
+    >
       
       {/* Left: AI Magic Search Button */}
       <button 
