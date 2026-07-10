@@ -68,13 +68,40 @@ export const discoverTV = async (page = 1) => {
 };
 
 // --- Discover with Filters (with fallback logic) ---
+// When type='all', fetches BOTH movies and TV and merges them for maximum variety.
 export const discoverWithFilters = async ({ type = 'movie', genreId, country, minRating, personId, yearFrom, yearTo, page = 1 }) => {
+  
+  // If type is 'all', fetch both movies and TV in parallel and merge results
+  if (type === 'all') {
+    const [movieData, tvData] = await Promise.all([
+      discoverWithFilters({ type: 'movie', genreId, country, minRating, personId, yearFrom, yearTo, page }),
+      discoverWithFilters({ type: 'series', genreId, country, minRating, personId, yearFrom, yearTo, page })
+    ]);
+
+    // Interleave results for variety: movie, tv, movie, tv...
+    const merged = [];
+    const movieResults = movieData.results || [];
+    const tvResults = tvData.results || [];
+    const maxLen = Math.max(movieResults.length, tvResults.length);
+    
+    for (let i = 0; i < maxLen; i++) {
+      if (i < movieResults.length) merged.push(movieResults[i]);
+      if (i < tvResults.length) merged.push(tvResults[i]);
+    }
+
+    return {
+      results: merged,
+      total_pages: Math.max(movieData.total_pages || 1, tvData.total_pages || 1),
+      total_results: (movieData.total_results || 0) + (tvData.total_results || 0)
+    };
+  }
+
   const endpoint = type === 'series' ? '/discover/tv' : '/discover/movie';
 
   const buildParams = (opts = {}) => {
     const params = {
       sort_by: 'popularity.desc',
-      page,
+      page: Math.min(page, 500), // TMDB max is 500
       include_adult: false,
       language: 'uk-UA',
     };
@@ -151,6 +178,15 @@ export const searchMovie = async (query) => {
   });
 };
 
+// --- Search Multi (movies + TV) ---
+export const searchMulti = async (query) => {
+  return fetchFromTMDB('/search/multi', {
+    query,
+    include_adult: false,
+    language: 'uk-UA'
+  });
+};
+
 // --- Search Person (for autocomplete) ---
 export const searchPerson = async (query) => {
   return fetchFromTMDB('/search/person', {
@@ -167,15 +203,24 @@ export const getMovieById = async (id) => {
 };
 
 // --- Extract Trailer Key ---
+// Accepts any YouTube video: Trailer > Teaser > Clip > Featurette > any
 export const getTrailerKey = (details) => {
   if (!details?.videos?.results) return null;
-  const videos = details.videos.results;
-  // Prefer Ukrainian trailer, then English, then any
-  const trailer = 
-    videos.find(v => v.site === 'YouTube' && v.type === 'Trailer' && v.iso_639_1 === 'uk') ||
-    videos.find(v => v.site === 'YouTube' && v.type === 'Trailer' && v.iso_639_1 === 'en') ||
-    videos.find(v => v.site === 'YouTube' && v.type === 'Trailer') ||
-    videos.find(v => v.site === 'YouTube' && v.type === 'Teaser');
+  const videos = details.videos.results.filter(v => v.site === 'YouTube');
+  if (videos.length === 0) return null;
+
+  // Priority: UK Trailer > EN Trailer > Any Trailer > UK Teaser > EN Teaser > Any Teaser > Any Clip > Any YouTube video
+  const trailer =
+    videos.find(v => v.type === 'Trailer' && v.iso_639_1 === 'uk') ||
+    videos.find(v => v.type === 'Trailer' && v.iso_639_1 === 'en') ||
+    videos.find(v => v.type === 'Trailer') ||
+    videos.find(v => v.type === 'Teaser' && v.iso_639_1 === 'uk') ||
+    videos.find(v => v.type === 'Teaser' && v.iso_639_1 === 'en') ||
+    videos.find(v => v.type === 'Teaser') ||
+    videos.find(v => v.type === 'Clip') ||
+    videos.find(v => v.type === 'Featurette') ||
+    videos[0]; // Fallback to any YouTube video at all
+
   return trailer ? trailer.key : null;
 };
 

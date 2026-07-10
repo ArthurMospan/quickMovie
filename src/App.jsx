@@ -115,7 +115,8 @@ export default function App() {
     isFetching.current = true;
 
     try {
-      const type = filters.type === 'all' ? 'movie' : filters.type;
+      // Pass type directly — discoverWithFilters handles 'all' by merging movies+tv
+      const type = filters.type;
       
       const data = await discoverWithFilters({
         type,
@@ -134,8 +135,11 @@ export default function App() {
       for (const m of data.results) {
         if (watched.includes(m.id)) continue;
 
+        // Determine if this is a TV show (has 'name' but not 'title', or media_type === 'tv')
+        const isTV = m.media_type === 'tv' || (!m.title && m.name) || m.first_air_date;
+
         try {
-          const details = type === 'series' 
+          const details = isTV
             ? await getTVDetailsWithVideos(m.id)
             : await getMovieDetailsWithVideos(m.id);
           
@@ -147,17 +151,17 @@ export default function App() {
             title: details.title || details.name || m.title || m.name,
             overview: details.overview || m.overview,
             vote_average: details.vote_average || m.vote_average,
-            release_date: details.release_date || details.first_air_date || m.release_date,
+            release_date: details.release_date || details.first_air_date || m.release_date || m.first_air_date,
             backdrop_path: m.backdrop_path || details.backdrop_path,
             poster_path: m.poster_path || details.poster_path,
             trailerKey,
             director: credits.director,
             actors: credits.actors,
-            country: details.production_countries?.[0]?.iso_3166_1 || '',
-            type
+            country: details.production_countries?.[0]?.iso_3166_1 || details.origin_country?.[0] || '',
+            type: isTV ? 'series' : 'movie'
           });
 
-          if (validMovies.filter(v => v.trailerKey).length >= 5) break;
+          if (validMovies.filter(v => v.trailerKey).length >= 8) break;
         } catch (e) {
           console.warn(`Failed to fetch details for ${m.id}`, e);
         }
