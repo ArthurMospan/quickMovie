@@ -53,7 +53,8 @@ export const discoverMovies = async (page = 1) => {
     page,
     include_adult: false,
     include_video: false,
-    language: 'uk-UA'
+    language: 'uk-UA',
+    'vote_count.gte': 30
   });
 };
 
@@ -63,7 +64,8 @@ export const discoverTV = async (page = 1) => {
     sort_by: 'popularity.desc',
     page,
     include_adult: false,
-    language: 'uk-UA'
+    language: 'uk-UA',
+    'vote_count.gte': 30
   });
 };
 
@@ -104,6 +106,7 @@ export const discoverWithFilters = async ({ type = 'movie', genreId, country, mi
       page: Math.min(page, 500), // TMDB max is 500
       include_adult: false,
       language: 'uk-UA',
+      'vote_count.gte': 30 // Require at least 30 votes to filter out fake 10.0s
     };
 
     if (genreId) params.with_genres = genreId;
