@@ -23,12 +23,12 @@ export default function TopNav({ activeTab, setActiveTab, onProfileClick, userPh
         onClick={() => setActiveTab('ai')} 
         className={`pointer-events-auto relative flex items-center justify-center w-10 h-10 rounded-full transition-all duration-300 group backdrop-blur-md border shadow-lg active:scale-90 ${
           activeTab === 'ai' 
-            ? 'bg-purple-500/20 border-purple-500/50' 
+            ? 'bg-zinc-500/30 border-zinc-500/50' 
             : 'bg-white/10 border-white/10 hover:bg-white/20'
         }`}
       >
-        <Search size={18} className={`transition-colors ${activeTab === 'ai' ? 'text-purple-300' : 'text-white'}`} />
-        <Sparkles size={10} className={`absolute top-2 right-2 transition-colors ${activeTab === 'ai' ? 'text-purple-400' : 'text-purple-300 opacity-80'}`} />
+        <Search size={18} className={`transition-colors ${activeTab === 'ai' ? 'text-zinc-300' : 'text-white'}`} />
+        <Sparkles size={10} className={`absolute top-2 right-2 transition-colors ${activeTab === 'ai' ? 'text-zinc-400' : 'text-zinc-300 opacity-80'}`} />
       </button>
 
       {/* Center: TikTok Tabs */}
@@ -40,7 +40,7 @@ export default function TopNav({ activeTab, setActiveTab, onProfileClick, userPh
       {/* Right: Profile Avatar */}
       <button 
         onClick={onProfileClick} 
-        className="pointer-events-auto rounded-full w-10 h-10 bg-gradient-to-tr from-indigo-500 to-purple-500 border border-white/20 hover:scale-105 active:scale-95 transition-all flex items-center justify-center overflow-hidden shadow-lg"
+        className="pointer-events-auto rounded-full w-10 h-10 bg-gradient-to-tr from-zinc-800 to-zinc-950 border border-white/20 hover:scale-105 active:scale-95 transition-all flex items-center justify-center overflow-hidden shadow-lg"
       >
         {userPhotoURL ? (
           <img src={userPhotoURL} alt="Avatar" className="w-full h-full object-cover" />

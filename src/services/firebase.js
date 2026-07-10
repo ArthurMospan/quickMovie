@@ -1,5 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, setDoc, getDoc, updateDoc, arrayUnion, arrayRemove, onSnapshot } from 'firebase/firestore';
+import { getAuth, signInAnonymously } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -13,12 +14,16 @@ const firebaseConfig = {
 
 const app = initializeApp(firebaseConfig);
 export const db = getFirestore(app);
+export const auth = getAuth(app);
 
 // --- Telegram User Helpers ---
 
 // Get Telegram user from WebApp SDK
-export const getTelegramUser = () => {
+export const getTelegramUser = async () => {
   try {
+    // Authenticate anonymously to satisfy Firebase rules (request.auth != null)
+    await signInAnonymously(auth);
+    
     const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
     if (tgUser && tgUser.id) {
       return {
@@ -30,7 +35,7 @@ export const getTelegramUser = () => {
       };
     }
   } catch (e) {
-    console.warn('[TG] Could not get Telegram user:', e);
+    console.warn('[TG] Could not get Telegram user or auth failed:', e);
   }
   return null;
 };

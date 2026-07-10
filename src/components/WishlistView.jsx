@@ -58,7 +58,7 @@ export default function WishlistView({ mySaves, partnerSaves, partnerId, onToggl
         </button>
         <button 
           onClick={() => setTab('matches')} 
-          className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all flex justify-center items-center gap-2 ${tab === 'matches' ? 'bg-rose-500/30 text-rose-200' : 'text-white/40'}`}
+          className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all flex justify-center items-center gap-2 ${tab === 'matches' ? 'bg-white/20 text-white' : 'text-white/40'}`}
         >
           <Heart size={12} className={tab === 'matches' ? 'fill-current' : ''} /> Спільні ({matchItems.length})
         </button>
@@ -122,13 +122,13 @@ export default function WishlistView({ mySaves, partnerSaves, partnerId, onToggl
                 <div className="absolute top-2 right-2 flex flex-col gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                   <button 
                     onClick={() => onToggleSave(movie.id)} 
-                    className="p-1.5 bg-black/40 backdrop-blur-md rounded-full text-rose-500 border border-white/10 active:scale-90 transition-transform"
+                    className="p-1.5 bg-black/40 backdrop-blur-md rounded-full text-white border border-white/10 active:scale-90 transition-transform"
                   >
                     <Heart size={14} className="fill-current" />
                   </button>
                   <button 
                     onClick={() => onToggleWatched(movie.id)} 
-                    className={`p-1.5 backdrop-blur-md rounded-full border border-white/10 active:scale-90 transition-transform ${isWatched ? 'bg-emerald-500 text-white' : 'bg-black/40 text-white/50'}`}
+                    className={`p-1.5 backdrop-blur-md rounded-full border border-white/10 active:scale-90 transition-transform ${isWatched ? 'bg-white text-black' : 'bg-black/40 text-white/50'}`}
                   >
                     <Check size={14} />
                   </button>
@@ -137,9 +137,9 @@ export default function WishlistView({ mySaves, partnerSaves, partnerId, onToggl
 
               {/* Watched overlay */}
               {isWatched && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="bg-emerald-500/20 backdrop-blur-sm rounded-full p-3 border border-emerald-500/30">
-                    <Check size={24} className="text-emerald-400" />
+                <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                  <div className="bg-black/50 backdrop-blur-sm rounded-full p-3 border border-white/20">
+                    <Check size={24} className="text-white" />
                   </div>
                 </div>
               )}

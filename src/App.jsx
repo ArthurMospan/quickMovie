@@ -67,10 +67,19 @@ export default function App() {
   // --- Init Telegram User ---
   useEffect(() => {
     const initUser = async () => {
-      const tgUser = getTelegramUser();
+      const tgUser = await getTelegramUser();
       if (tgUser) {
         setUser(tgUser);
         await ensureUserDoc(tgUser.uid);
+        
+        // Auto-connect partner if opened via invite link
+        const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+        if (startParam && startParam !== tgUser.tgId.toString()) {
+          const newPartnerId = `tg_${startParam}`;
+          setPartnerId(newPartnerId);
+          localStorage.setItem('qw_partner_id', newPartnerId);
+          await import('./services/firebase').then(m => m.updateUserPartnerId(tgUser.uid, newPartnerId));
+        }
       } else {
         // Look for a locally generated dev ID if not in TG? 
         // For now, if not in Telegram, they just can't save.
@@ -329,14 +338,14 @@ export default function App() {
             {/* Loading spinner at bottom */}
             {loading && (
               <div className="h-[100dvh] w-full snap-start flex flex-col items-center justify-center text-white/50 bg-black">
-                <div className="w-14 h-14 border-4 border-purple-500/20 border-t-purple-500 rounded-full animate-spin mb-4"></div>
+                <div className="w-14 h-14 border-4 border-white/10 border-t-white/80 rounded-full animate-spin mb-4"></div>
                 <p className="font-semibold tracking-wide text-sm">Завантаження трейлерів...</p>
               </div>
             )}
           </div>
         ) : loading ? (
           <div className="h-[100dvh] w-full flex flex-col items-center justify-center text-white/50 bg-black">
-            <div className="w-14 h-14 border-4 border-purple-500/20 border-t-purple-500 rounded-full animate-spin mb-4"></div>
+            <div className="w-14 h-14 border-4 border-white/10 border-t-white/80 rounded-full animate-spin mb-4"></div>
             <p className="font-semibold tracking-wide text-sm">Завантаження трейлерів...</p>
           </div>
         ) : (

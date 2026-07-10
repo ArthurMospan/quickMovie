@@ -201,19 +201,19 @@ export default function VideoCard({
       {/* Right Actions */}
       <div className={`absolute right-3 bottom-20 flex flex-col items-center gap-4 z-30 pointer-events-auto transition-opacity duration-300 ${active ? 'opacity-100' : 'opacity-0'}`}>
         <ActionBtn 
-          icon={<Heart size={24} className={isSaved ? 'fill-rose-500 text-rose-500' : 'text-white'} />} 
+          icon={<Heart size={24} className={isSaved ? 'fill-white text-white' : 'text-white'} />} 
           label={isSaved ? "У watchlist" : "Зберегти"} 
           onClick={onToggleSave} 
         />
         
         {upcoming ? (
-          <ActionBtn icon={<Bell size={22} className="text-amber-400" />} label="Нагадати" onClick={() => openCalendarReminder(movie)} />
+          <ActionBtn icon={<Bell size={22} className="text-white" />} label="Нагадати" onClick={() => openCalendarReminder(movie)} />
         ) : (
           <ActionBtn icon={<div className="font-bold text-white text-sm">x{speedState}</div>} label="Швидкість" onClick={handleSpeedChange} />
         )}
 
         <ActionBtn 
-          icon={copied ? <CheckCircle2 size={22} className="text-emerald-400" /> : <Share2 size={22} className="text-white" />} 
+          icon={copied ? <CheckCircle2 size={22} className="text-white" /> : <Share2 size={22} className="text-white" />} 
           label={copied ? "Скопійовано" : "Поділитись"} 
           onClick={handleShare} 
         />
@@ -235,7 +235,7 @@ export default function VideoCard({
       {/* Bottom Info */}
       <div className={`absolute bottom-4 left-4 right-20 z-30 flex flex-col gap-1.5 pointer-events-none text-white drop-shadow-lg transition-opacity duration-300 ${active ? 'opacity-100' : 'opacity-0'}`}>
         {upcoming && (
-          <span className="bg-yellow-400 text-black px-2 py-0.5 rounded text-[10px] font-bold self-start mb-0.5">
+          <span className="bg-white text-black px-2 py-0.5 rounded text-[10px] font-bold self-start mb-0.5">
             Вихід: {formatDateUA(movie.release_date)}
           </span>
         )}
@@ -243,7 +243,7 @@ export default function VideoCard({
         <p className="text-sm text-white/90 line-clamp-3 font-medium drop-shadow-md">{movie.overview}</p>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs font-semibold text-white/90">
           <span className="flex items-center gap-1">
-            <Star size={12} className="text-yellow-400 fill-yellow-400" /> 
+            <Star size={12} className="text-white fill-white" /> 
             {(movie.vote_average || 0).toFixed(1)}
           </span>
           <span>•</span>
