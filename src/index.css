@@ -193,4 +193,9 @@ html, body {
   .landscape-filter-btn {
     display: flex !important;
   }
+
+  /* Watchlist: 3 columns in landscape (width allows) */
+  .wl-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
 }

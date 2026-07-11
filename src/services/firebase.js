@@ -70,6 +70,7 @@ export const ensureUserDoc = async (uid) => {
       await setDoc(userDocRef, {
         saves: [],
         watched: [],
+        shared: [],
         partnerId: ""
       });
     }
@@ -117,6 +118,16 @@ export const toggleSaveMovie = async (uid, movieId, isSaved) => {
 };
 
 // --- Mark Watched ---
+// --- Toggle Shared (⭐ adds a movie from MY list to the couple's shared list) ---
+export const toggleSharedMovie = async (uid, movieId, isShared) => {
+  if (!uid) return;
+  await ensureUserDoc(uid);
+  const userDocRef = doc(db, 'users', uid);
+  await updateDoc(userDocRef, {
+    shared: isShared ? arrayRemove(movieId) : arrayUnion(movieId)
+  });
+};
+
 export const markMovieWatched = async (uid, movieId) => {
   if (!uid) return;
   const userDocRef = doc(db, 'users', uid);

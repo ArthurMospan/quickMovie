@@ -22,6 +22,7 @@ import {
   subscribeToPartner,
   toggleSaveMovie,
   toggleMovieWatched,
+  toggleSharedMovie,
   updateUserPartnerId
 } from './services/firebase';
 import { SlidersHorizontal, Film, Play } from 'lucide-react';
@@ -29,6 +30,7 @@ import { SlidersHorizontal, Film, Play } from 'lucide-react';
 // --- Local-first storage keys (saves work even without Firebase) ---
 const LS_SAVES = 'qm_saves';
 const LS_WATCHED = 'qm_watched';
+const LS_SHARED = 'qm_shared';
 const readLS = (key) => {
   try { return JSON.parse(localStorage.getItem(key)) || []; } catch (e) { return []; }
 };
@@ -97,8 +99,10 @@ export default function App() {
   const [userData, setUserData] = useState({
     saves: readLS(LS_SAVES),
     watched: readLS(LS_WATCHED),
+    shared: readLS(LS_SHARED),
     partnerId: ''
   });
+  const [wishlistInitTab, setWishlistInitTab] = useState('mine');
   const [partnerId, setPartnerId] = useState('');
   const [partnerData, setPartnerData] = useState({ saves: [], watched: [] });
   const reconciled = useRef(false);
@@ -182,22 +186,27 @@ export default function App() {
       if (!docSnap.exists()) return;
       const remote = docSnap.data();
 
-      // One-time reconcile: push local-only saves (made while offline) to Firestore
+      // One-time reconcile: push local-only saves/shared (made while offline) to Firestore
       const localSaves = readLS(LS_SAVES);
+      const localShared = readLS(LS_SHARED);
       const missing = localSaves.filter(id => !(remote.saves || []).includes(id));
-      if (missing.length > 0 && !reconciled.current) {
+      const missingShared = localShared.filter(id => !(remote.shared || []).includes(id));
+      if ((missing.length > 0 || missingShared.length > 0) && !reconciled.current) {
         reconciled.current = true;
         missing.forEach(id => toggleSaveMovie(user.uid, id, false).catch(() => {}));
+        missingShared.forEach(id => toggleSharedMovie(user.uid, id, false).catch(() => {}));
       }
 
       const merged = {
         ...remote,
         saves: [...new Set([...(remote.saves || []), ...missing])],
+        shared: [...new Set([...(remote.shared || []), ...missingShared])],
         watched: remote.watched || []
       };
       setUserData(merged);
       writeLS(LS_SAVES, merged.saves);
       writeLS(LS_WATCHED, merged.watched);
+      writeLS(LS_SHARED, merged.shared);
 
       if (remote.partnerId) {
         setPartnerId(remote.partnerId);
@@ -363,6 +372,7 @@ export default function App() {
       const next = { ...prev, ...changes };
       writeLS(LS_SAVES, next.saves || []);
       writeLS(LS_WATCHED, next.watched || []);
+      writeLS(LS_SHARED, next.shared || []);
       return next;
     });
   };
@@ -411,6 +421,31 @@ export default function App() {
         console.error("Watched sync error:", e);
       }
     }
+  };
+
+  // --- Toggle Shared (⭐) ---
+  const handleToggleShared = async (movieId) => {
+    const isShared = userData.shared?.includes(movieId);
+    const newShared = isShared
+      ? (userData.shared || []).filter(id => id !== movieId)
+      : [...(userData.shared || []), movieId];
+    applyLocal({ shared: newShared });
+    showToast(isShared ? 'Прибрано зі Спільних' : 'Додано у Спільні ⭐');
+
+    if (user) {
+      try {
+        await toggleSharedMovie(user.uid, movieId, isShared);
+      } catch (e) {
+        console.error("Shared sync error:", e);
+      }
+    }
+  };
+
+  // --- Open watchlist on a specific tab (from profile dashboard tiles) ---
+  const openListFromProfile = (tab) => {
+    setShowProfile(false);
+    setWishlistInitTab(tab);
+    handleTabChange('watchlist');
   };
 
   // --- Watch Trailer from AI Search ---
@@ -570,11 +605,15 @@ export default function App() {
       {activeTab === 'watchlist' && (
         <WishlistView
           mySaves={userData.saves || []}
-          partnerSaves={partnerData.saves || []}
+          myShared={userData.shared || []}
+          partnerShared={partnerData.shared || []}
           partnerId={partnerId}
           partnerProfile={partnerData}
+          myPhoto={user?.photoURL}
+          initialTab={wishlistInitTab}
           onToggleSave={handleToggleSave}
           onToggleWatched={handleToggleWatched}
+          onToggleShared={handleToggleShared}
           watched={userData.watched || []}
           onGoToProfile={() => setShowProfile(true)}
           notify={showToast}
@@ -611,6 +650,7 @@ export default function App() {
           partnerId={partnerId}
           partnerProfile={partnerData}
           setPartnerId={handleSetPartnerId}
+          onOpenList={openListFromProfile}
         />
       )}
     </div>
