@@ -23,3 +23,8 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+
+# temp files from AI session (safe to delete)
+_bashtest.txt
+_synctest.txt
+package.json.tmptest
