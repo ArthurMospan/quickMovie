@@ -32,11 +32,9 @@ export const getTelegramUser = async () => {
   }
 
   if (tgUser && tgUser.id) {
-    // Real avatar: photo_url from initData (Bot API 7.2+), fallback to public t.me userpic
-    let photoURL = tgUser.photo_url || null;
-    if (!photoURL && tgUser.username) {
-      photoURL = `https://t.me/i/userpic/320/${tgUser.username}.jpg`;
-    }
+    // Real avatar: photo_url from initData (often absent) → our server proxy
+    // via Bot API (/api/avatar) → components fall back to initials on error.
+    const photoURL = tgUser.photo_url || `/api/avatar?id=${tgUser.id}`;
     return {
       uid: `tg_${tgUser.id}`,
       tgId: tgUser.id,
@@ -46,6 +44,20 @@ export const getTelegramUser = async () => {
     };
   }
   return null;
+};
+
+// Save the user's public profile (name/username/photo) so the partner can see who they're connected to
+export const saveUserProfile = async (user) => {
+  if (!user?.uid) return;
+  try {
+    await setDoc(doc(db, 'users', user.uid), {
+      name: user.displayName || '',
+      username: user.username || '',
+      photo: user.photoURL || ''
+    }, { merge: true });
+  } catch (e) {
+    console.warn('[Firebase] saveUserProfile failed:', e?.message);
+  }
 };
 
 // Ensure user document exists in Firestore

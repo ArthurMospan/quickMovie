@@ -1,5 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { Sparkles, ArrowUp, Loader2, Play, Star, RotateCcw } from 'lucide-react';
+import { ArrowUp, Loader2, Play, Star, RotateCcw } from 'lucide-react';
+
+function AIAvatar({ size = 'w-7 h-7' }) {
+  return (
+    <img src="/logo.png" alt="AI" className={`${size} rounded-full object-cover shrink-0 border border-white/15`} />
+  );
+}
 import { guessMovieFromDescription, parseAIAnswer } from '../services/gemini';
 import { searchMulti, getMovieDetailsWithVideos, getTVDetailsWithVideos, getTrailerKey } from '../services/tmdb';
 
@@ -133,11 +139,8 @@ export default function AISearchTab({ onWatchTrailer }) {
         {/* Welcome / Empty State */}
         {messages.length === 0 && !loading && (
           <div className="flex flex-col items-center justify-center h-full text-center px-4 animate-in">
-            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-600/30 to-blue-500/30 border border-purple-500/20 flex items-center justify-center mb-4">
-              <Sparkles size={28} className="text-purple-400" />
-            </div>
-            <h3 className="text-xl font-bold text-white mb-1">Кіно-ШІ</h3>
-            <p className="text-[11px] text-white/30 font-semibold uppercase tracking-wider mb-3">на базі Gemini 2.5</p>
+            <img src="/logo.png" alt="QuickMovie" className="w-16 h-16 rounded-2xl mb-4 shadow-[0_0_40px_rgba(255,255,255,0.12)]" />
+            <h3 className="text-xl font-bold text-white mb-2">Кіно-ШІ</h3>
             <p className="text-sm text-white/50 mb-6 max-w-[260px]">Опишіть фільм своїми словами — я впізнаю його і знайду трейлер</p>
 
             {/* Suggestion chips */}
@@ -170,9 +173,7 @@ export default function AISearchTab({ onWatchTrailer }) {
             ) : (
               /* AI bubble */
               <div className="max-w-[88%] flex gap-2.5">
-                <div className="shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-purple-600 to-blue-500 flex items-center justify-center mt-1">
-                  <Sparkles size={14} className="text-white" />
-                </div>
+                <div className="mt-1"><AIAvatar /></div>
                 <div className="flex-1 space-y-3 min-w-0">
                   {/* Text response */}
                   <div className={`bg-white/5 border border-white/10 rounded-3xl rounded-tl-lg px-4 py-3 ${msg.isError ? 'border-red-500/30 bg-red-500/5' : ''}`}>
@@ -234,9 +235,7 @@ export default function AISearchTab({ onWatchTrailer }) {
         {loading && (
           <div className="mb-4 flex justify-start animate-in">
             <div className="flex gap-2.5">
-              <div className="shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-purple-600 to-blue-500 flex items-center justify-center">
-                <Sparkles size={14} className="text-white" />
-              </div>
+              <AIAvatar />
               <div className="bg-white/5 border border-white/10 rounded-3xl rounded-tl-lg px-4 py-3 flex items-center gap-2">
                 <div className="flex gap-1">
                   <div className="w-1.5 h-1.5 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>

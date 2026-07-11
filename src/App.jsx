@@ -5,46 +5,62 @@ import ProfileModal from './components/ProfileModal';
 import AISearchTab from './components/AISearchTab';
 import FiltersModal from './components/FiltersModal';
 import WishlistView from './components/WishlistView';
-import { 
-  discoverWithFilters, 
-  getMovieDetailsWithVideos, 
+import {
+  discoverWithFilters,
+  getSmartFeed,
+  getMovieDetailsWithVideos,
   getTVDetailsWithVideos,
-  getTrailerKey, 
+  getTrailerKey,
   getCreditsInfo,
   getGenreList
 } from './services/tmdb';
-import { 
+import {
   getTelegramUser,
   ensureUserDoc,
-  subscribeToUser, 
-  subscribeToPartner, 
+  saveUserProfile,
+  subscribeToUser,
+  subscribeToPartner,
   toggleSaveMovie,
   toggleMovieWatched,
   updateUserPartnerId
 } from './services/firebase';
 import { SlidersHorizontal, Film, Play } from 'lucide-react';
 
-// Random start page for variety (1-500 max allowed by TMDB)
-const getRandomStartPage = () => Math.floor(Math.random() * 500) + 1;
+// --- Local-first storage keys (saves work even without Firebase) ---
+const LS_SAVES = 'qm_saves';
+const LS_WATCHED = 'qm_watched';
+const readLS = (key) => {
+  try { return JSON.parse(localStorage.getItem(key)) || []; } catch (e) { return []; }
+};
+const writeLS = (key, arr) => {
+  try { localStorage.setItem(key, JSON.stringify(arr)); } catch (e) { /* full */ }
+};
 
 // Country code to name map
 const COUNTRY_NAMES = {
-  US: 'США', GB: 'UK', KR: '🇰🇷', JP: '🇯🇵', FR: '🇫🇷', DE: '🇩🇪',
-  IN: '🇮🇳', UA: '🇺🇦', AU: '🇦🇺', ES: '🇪🇸', IT: '🇮🇹', TR: '🇹🇷'
+  US: 'США', GB: 'UK', KR: 'Корея', JP: 'Японія', FR: 'Франція', DE: 'Німеччина',
+  IN: 'Індія', UA: 'Україна', AU: 'Австралія', ES: 'Іспанія', IT: 'Італія', TR: 'Туреччина'
 };
 
-// Generate short filter description
+// Generate short filter description (multi-select aware)
 function getFilterSummary(filters, genreMap) {
   const parts = [];
-  if (filters.type === 'movie') parts.push('🎬 Фільми');
-  if (filters.type === 'series') parts.push('📺 Серіали');
-  if (filters.genreId && genreMap[filters.genreId]) parts.push(genreMap[filters.genreId]);
-  if (filters.country) parts.push(COUNTRY_NAMES[filters.country] || filters.country);
+  if (filters.type === 'movie') parts.push('Фільми');
+  if (filters.type === 'series') parts.push('Серіали');
+
+  const genreNames = (filters.genreIds || []).map(id => genreMap[id]).filter(Boolean);
+  if (genreNames.length === 1) parts.push(genreNames[0]);
+  if (genreNames.length > 1) parts.push(`${genreNames[0]} +${genreNames.length - 1}`);
+
+  const countryNames = (filters.countries || []).map(c => COUNTRY_NAMES[c] || c);
+  if (countryNames.length === 1) parts.push(countryNames[0]);
+  if (countryNames.length > 1) parts.push(`${countryNames[0]} +${countryNames.length - 1}`);
+
   if (filters.minRating > 0) parts.push(`⭐${filters.minRating}+`);
   if (filters.personName) parts.push(filters.personName.split(' ')[0]);
   if (filters.yearFrom || filters.yearTo) {
     if (filters.yearFrom && filters.yearTo) {
-      parts.push(`${filters.yearFrom}-${filters.yearTo}`);
+      parts.push(filters.yearFrom === filters.yearTo ? `${filters.yearFrom}` : `${filters.yearFrom}–${filters.yearTo}`);
     } else if (filters.yearFrom) {
       parts.push(`з ${filters.yearFrom}`);
     } else {
@@ -70,17 +86,32 @@ export default function App() {
   // --- Feed State ---
   const [movies, setMovies] = useState([]);
   const [activeIndex, setActiveIndex] = useState(0);
-  const [page, setPage] = useState(() => getRandomStartPage());
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(false);
   const containerRef = useRef(null);
   const isFetching = useRef(false);
-  const feedScrollPos = useRef(0); // Preserve scroll position
+  const feedScrollPos = useRef(0);
 
-  // --- Telegram User & Data ---
+  // --- Telegram User & Data (local-first: starts from localStorage) ---
   const [user, setUser] = useState(null);
-  const [userData, setUserData] = useState({ saves: [], watched: [], partnerId: '' });
+  const [userData, setUserData] = useState({
+    saves: readLS(LS_SAVES),
+    watched: readLS(LS_WATCHED),
+    partnerId: ''
+  });
   const [partnerId, setPartnerId] = useState('');
   const [partnerData, setPartnerData] = useState({ saves: [], watched: [] });
+  const [syncOk, setSyncOk] = useState(null); // null=unknown, true=Firestore works, false=local-only
+  const reconciled = useRef(false);
+
+  // --- Toast feedback ---
+  const [toast, setToast] = useState(null);
+  const toastTimer = useRef(null);
+  const showToast = (text) => {
+    setToast(text);
+    if (toastTimer.current) clearTimeout(toastTimer.current);
+    toastTimer.current = setTimeout(() => setToast(null), 1800);
+  };
 
   // --- Modals ---
   const [showFilters, setShowFilters] = useState(false);
@@ -92,11 +123,11 @@ export default function App() {
   // --- Genre map for filter summary ---
   const [genreMap, setGenreMap] = useState({});
 
-  // --- Filters ---
+  // --- Filters (multi-select) ---
   const [filters, setFilters] = useState({
     type: 'all',
-    genreId: null,
-    country: '',
+    genreIds: [],
+    countries: [],
     minRating: 0,
     personId: null,
     personName: '',
@@ -117,44 +148,64 @@ export default function App() {
   useEffect(() => {
     const initUser = async () => {
       const tgUser = await getTelegramUser();
-      if (tgUser) {
-        setUser(tgUser);
-        await ensureUserDoc(tgUser.uid);
-        
-        // Auto-connect partner if opened via invite link
-        const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
-        if (startParam && startParam !== tgUser.tgId.toString()) {
-          const newPartnerId = `tg_${startParam}`;
+      if (!tgUser) {
+        console.log('No Telegram user found. App running in local mode.');
+        return;
+      }
+      setUser(tgUser);
+      await ensureUserDoc(tgUser.uid);
+      saveUserProfile(tgUser); // so the partner sees who they're connected with
+
+      // Auto-connect partner if opened via invite link (TWO-WAY link)
+      const startParam = window.Telegram?.WebApp?.initDataUnsafe?.start_param;
+      if (startParam && startParam !== tgUser.tgId.toString()) {
+        const newPartnerId = `tg_${startParam.replace(/\D/g, '')}`;
+        if (newPartnerId.length > 3) {
           setPartnerId(newPartnerId);
           localStorage.setItem('qw_partner_id', newPartnerId);
-          await updateUserPartnerId(tgUser.uid, newPartnerId);
+          try {
+            await updateUserPartnerId(tgUser.uid, newPartnerId);      // me -> partner
+            await updateUserPartnerId(newPartnerId, tgUser.uid);      // partner -> me (accept invite both ways)
+            showToast('Вішлісти з\'єднано ✓');
+          } catch (e) {
+            console.warn('Partner link failed:', e?.message);
+          }
         }
-      } else {
-        // Look for a locally generated dev ID if not in TG? 
-        // For now, if not in Telegram, they just can't save.
-        console.log("No Telegram user found. App running in anonymous mode.");
       }
     };
     initUser();
   }, []);
 
-  // --- User Data Subscription ---
+  // --- User Data Subscription (merges remote with local-pending saves once) ---
   useEffect(() => {
-    if (!user) {
-      setUserData({ saves: [], watched: [], partnerId: '' });
-      return;
-    }
+    if (!user) return;
     const unsub = subscribeToUser(user.uid, (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data();
-        setUserData(data);
-        if (data.partnerId) {
-          setPartnerId(data.partnerId);
-        } else {
-          // If Firestore partnerId is empty, try local storage fallback
-          const localPartner = localStorage.getItem('qw_partner_id');
-          if (localPartner) setPartnerId(localPartner);
-        }
+      if (!docSnap.exists()) return;
+      const remote = docSnap.data();
+      setSyncOk(true);
+
+      // One-time reconcile: push local-only saves (made while offline) to Firestore
+      const localSaves = readLS(LS_SAVES);
+      const missing = localSaves.filter(id => !(remote.saves || []).includes(id));
+      if (missing.length > 0 && !reconciled.current) {
+        reconciled.current = true;
+        missing.forEach(id => toggleSaveMovie(user.uid, id, false).catch(() => {}));
+      }
+
+      const merged = {
+        ...remote,
+        saves: [...new Set([...(remote.saves || []), ...missing])],
+        watched: remote.watched || []
+      };
+      setUserData(merged);
+      writeLS(LS_SAVES, merged.saves);
+      writeLS(LS_WATCHED, merged.watched);
+
+      if (remote.partnerId) {
+        setPartnerId(remote.partnerId);
+      } else {
+        const localPartner = localStorage.getItem('qw_partner_id');
+        if (localPartner) setPartnerId(localPartner);
       }
     });
     return () => unsub();
@@ -180,31 +231,38 @@ export default function App() {
   const handleSetPartnerId = async (id) => {
     setPartnerId(id);
     localStorage.setItem('qw_partner_id', id);
-    if (user?.uid) {
-      await updateUserPartnerId(user.uid, id);
+    if (user?.uid && id) {
+      try {
+        await updateUserPartnerId(user.uid, id);
+        await updateUserPartnerId(id, user.uid); // two-way
+      } catch (e) { console.warn(e); }
+    } else if (user?.uid) {
+      try { await updateUserPartnerId(user.uid, ''); } catch (e) { /* ignore */ }
     }
   };
 
-  // --- Load Movies from TMDB ---
+  // --- Load Movies (smart feed when no filters, discover otherwise) ---
+  const hasActiveFilters = (filters.genreIds?.length > 0) || (filters.countries?.length > 0) ||
+    filters.minRating > 0 || filters.personId || filters.yearFrom || filters.yearTo || filters.type !== 'all';
+
   const loadMovies = useCallback(async (pageNum = 1, reset = false) => {
     if (isFetching.current) return;
     setLoading(true);
     isFetching.current = true;
 
     try {
-      // Pass type directly — discoverWithFilters handles 'all' by merging movies+tv
-      const type = filters.type;
-      
-      const data = await discoverWithFilters({
-        type,
-        genreId: filters.genreId,
-        country: filters.country,
-        minRating: filters.minRating,
-        personId: filters.personId,
-        yearFrom: filters.yearFrom,
-        yearTo: filters.yearTo,
-        page: pageNum
-      });
+      const data = hasActiveFilters
+        ? await discoverWithFilters({
+            type: filters.type,
+            genreIds: filters.genreIds,
+            countries: filters.countries,
+            minRating: filters.minRating,
+            personId: filters.personId,
+            yearFrom: filters.yearFrom,
+            yearTo: filters.yearTo,
+            page: pageNum
+          })
+        : await getSmartFeed(pageNum);
 
       const validMovies = [];
       const watched = userData?.watched || [];
@@ -212,14 +270,13 @@ export default function App() {
       for (const m of data.results) {
         if (watched.includes(m.id)) continue;
 
-        // Determine if this is a TV show (has 'name' but not 'title', or media_type === 'tv')
         const isTV = m.media_type === 'tv' || (!m.title && m.name) || m.first_air_date;
 
         try {
           const details = isTV
             ? await getTVDetailsWithVideos(m.id)
             : await getMovieDetailsWithVideos(m.id);
-          
+
           const trailerKey = getTrailerKey(details);
           const credits = getCreditsInfo(details);
 
@@ -257,24 +314,21 @@ export default function App() {
       setLoading(false);
       isFetching.current = false;
     }
-  }, [filters, userData?.watched]);
+  }, [filters, hasActiveFilters, userData?.watched]);
 
-  // --- Initial Load (random page only with default filters) ---
-  const hasActiveFilters = filters.genreId || filters.country || filters.minRating > 0 || filters.personId || filters.yearFrom || filters.yearTo || filters.type !== 'all';
-
+  // --- Initial Load / filter change ---
   useEffect(() => {
-    if (showWelcome) return; // Don't load until welcome is dismissed
-    const startPage = hasActiveFilters ? 1 : getRandomStartPage();
+    if (showWelcome) return;
     setMovies([]);
-    setPage(startPage);
+    setPage(1);
     setActiveIndex(0);
-    loadMovies(startPage, true);
+    loadMovies(1, true);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, showWelcome]);
 
   // --- Save/restore scroll when switching tabs ---
   useEffect(() => {
     if (activeTab === 'feed' && containerRef.current && feedScrollPos.current > 0) {
-      // Restore scroll position when returning to feed
       requestAnimationFrame(() => {
         if (containerRef.current) {
           containerRef.current.scrollTop = feedScrollPos.current;
@@ -284,7 +338,6 @@ export default function App() {
   }, [activeTab]);
 
   const handleTabChange = (tab) => {
-    // Save current feed scroll position before switching
     if (activeTab === 'feed' && containerRef.current) {
       feedScrollPos.current = containerRef.current.scrollTop;
     }
@@ -295,7 +348,7 @@ export default function App() {
   const handleScroll = () => {
     if (!containerRef.current) return;
     const { scrollTop, clientHeight, scrollHeight } = containerRef.current;
-    
+
     const index = Math.round(scrollTop / clientHeight);
     if (index !== activeIndex) {
       setActiveIndex(index);
@@ -306,31 +359,54 @@ export default function App() {
     }
   };
 
-  // --- Toggle Save ---
+  // --- Local-first mutation: instant UI + localStorage, then Firestore sync ---
+  const applyLocal = (changes) => {
+    setUserData(prev => {
+      const next = { ...prev, ...changes };
+      writeLS(LS_SAVES, next.saves || []);
+      writeLS(LS_WATCHED, next.watched || []);
+      return next;
+    });
+  };
+
+  // --- Toggle Save (works ALWAYS — with or without Firebase) ---
   const handleToggleSave = async (movieId) => {
-    if (!user) {
-      setShowProfile(true);
-      return;
-    }
     const isSaved = userData.saves?.includes(movieId);
-    try {
-      await toggleSaveMovie(user.uid, movieId, isSaved);
-    } catch (e) {
-      console.error("Save error:", e);
+    const newSaves = isSaved
+      ? (userData.saves || []).filter(id => id !== movieId)
+      : [...(userData.saves || []), movieId];
+    applyLocal({ saves: newSaves });
+    showToast(isSaved ? 'Прибрано з вішліста' : 'Додано у вішліст ❤');
+
+    if (user) {
+      try {
+        await toggleSaveMovie(user.uid, movieId, isSaved);
+        setSyncOk(true);
+      } catch (e) {
+        console.error("Save sync error:", e);
+        setSyncOk(false);
+      }
     }
   };
 
   // --- Toggle Watched ---
   const handleToggleWatched = async (movieId) => {
-    if (!user) {
-      setShowProfile(true);
-      return;
-    }
     const isWatched = userData.watched?.includes(movieId);
-    try {
-      await toggleMovieWatched(user.uid, movieId, isWatched);
-    } catch (e) {
-      console.error("Watched error:", e);
+    const newWatched = isWatched
+      ? (userData.watched || []).filter(id => id !== movieId)
+      : [...(userData.watched || []), movieId];
+    const newSaves = (userData.saves || []).filter(id => id !== movieId || isWatched);
+    applyLocal({ watched: newWatched, saves: isWatched ? userData.saves : newSaves });
+    showToast(isWatched ? 'Повернуто у список' : 'Позначено як переглянуте ✓');
+
+    if (user) {
+      try {
+        await toggleMovieWatched(user.uid, movieId, isWatched);
+        setSyncOk(true);
+      } catch (e) {
+        console.error("Watched sync error:", e);
+        setSyncOk(false);
+      }
     }
   };
 
@@ -367,23 +443,19 @@ export default function App() {
   if (showWelcome) {
     return (
       <div className="min-h-[100dvh] bg-black text-white flex flex-col items-center justify-center p-8 relative overflow-hidden">
-        {/* Background glow */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
           <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[300px] h-[300px] bg-purple-600/20 rounded-full blur-[120px]"></div>
           <div className="absolute bottom-1/3 left-1/3 w-[200px] h-[200px] bg-blue-500/15 rounded-full blur-[100px]"></div>
         </div>
-        
+
         <div className="relative z-10 flex flex-col items-center animate-in">
-          {/* Logo */}
           <img src="/logo.png" alt="QuickMovie" className="w-24 h-24 rounded-3xl mb-6 shadow-2xl" />
-          
-          {/* Title */}
+
           <h1 className="text-3xl font-bold mb-2 tracking-tight">QuickMovie</h1>
           <p className="text-white/50 text-sm mb-8 text-center max-w-[260px] leading-relaxed">
             Свайпай трейлери як TikTok. Зберігай. Дивись разом з друзями.
           </p>
 
-          {/* Features */}
           <div className="space-y-3 mb-10 w-full max-w-[280px]">
             {[
               { emoji: '🎬', text: 'Трейлери фільмів та серіалів' },
@@ -396,9 +468,8 @@ export default function App() {
               </div>
             ))}
           </div>
-          
-          {/* Start Button */}
-          <button 
+
+          <button
             onClick={handleDismissWelcome}
             className="w-full max-w-[280px] bg-white text-black font-bold py-4 rounded-2xl text-base active:scale-95 transition-all flex items-center justify-center gap-2 shadow-[0_0_40px_rgba(255,255,255,0.15)]"
           >
@@ -412,11 +483,10 @@ export default function App() {
   // =================== MAIN APP ===================
   return (
     <div className="min-h-[100dvh] bg-black text-white font-sans relative overflow-hidden">
-      
-      {/* Top Navigation — uses handleTabChange instead of setActiveTab */}
-      <TopNav 
-        activeTab={activeTab} 
-        setActiveTab={handleTabChange} 
+
+      <TopNav
+        activeTab={activeTab}
+        setActiveTab={handleTabChange}
         onProfileClick={() => setShowProfile(true)}
         userPhotoURL={user?.photoURL}
       />
@@ -424,15 +494,15 @@ export default function App() {
       {/* ===== FEED TAB (always mounted, hidden when not active) ===== */}
       <div style={{ display: activeTab === 'feed' ? 'block' : 'none' }}>
         {feedMovies.length > 0 ? (
-          <div 
-            ref={containerRef} 
-            onScroll={handleScroll} 
+          <div
+            ref={containerRef}
+            onScroll={handleScroll}
             className="h-[100dvh] w-full overflow-y-scroll snap-y snap-mandatory scrollbar-hide bg-black"
           >
             {feedMovies.map((movie, index) => (
-              <VideoCard 
-                key={movie.id} 
-                movie={movie} 
+              <VideoCard
+                key={`${movie.type}_${movie.id}`}
+                movie={movie}
                 active={activeTab === 'feed' && index === activeIndex}
                 isSaved={userData.saves?.includes(movie.id)}
                 onToggleSave={() => handleToggleSave(movie.id)}
@@ -442,7 +512,6 @@ export default function App() {
               />
             ))}
 
-            {/* Loading spinner at bottom */}
             {loading && (
               <div className="h-[100dvh] w-full snap-start flex flex-col items-center justify-center text-white/50 bg-black">
                 <div className="w-14 h-14 border-4 border-white/10 border-t-white/80 rounded-full animate-spin mb-4"></div>
@@ -460,8 +529,8 @@ export default function App() {
             <Film size={48} className="text-white/20 mb-4" />
             <h3 className="text-xl font-bold mb-2">Нічого не знайдено</h3>
             <p className="text-white/40 text-sm mb-4">Спробуйте змінити фільтри</p>
-            <button 
-              onClick={() => setShowFilters(true)} 
+            <button
+              onClick={() => setShowFilters(true)}
               className="px-6 py-2.5 rounded-full bg-white/10 backdrop-blur-md border border-white/10 font-semibold text-sm active:scale-95 transition-transform"
             >
               Змінити фільтри
@@ -486,10 +555,11 @@ export default function App() {
 
       {/* ===== WATCHLIST TAB ===== */}
       {activeTab === 'watchlist' && (
-        <WishlistView 
+        <WishlistView
           mySaves={userData.saves || []}
           partnerSaves={partnerData.saves || []}
           partnerId={partnerId}
+          partnerProfile={partnerData}
           onToggleSave={handleToggleSave}
           onToggleWatched={handleToggleWatched}
           watched={userData.watched || []}
@@ -502,21 +572,32 @@ export default function App() {
         <AISearchTab onWatchTrailer={handleWatchTrailer} />
       )}
 
+      {/* ===== TOAST ===== */}
+      {toast && (
+        <div className="absolute left-1/2 -translate-x-1/2 bottom-24 z-[60] pointer-events-none animate-in">
+          <div className="bg-black/70 backdrop-blur-xl border border-white/15 rounded-full px-5 py-2.5 shadow-2xl">
+            <p className="text-sm font-semibold text-white whitespace-nowrap">{toast}</p>
+          </div>
+        </div>
+      )}
+
       {/* ===== MODALS ===== */}
       {showFilters && (
-        <FiltersModal 
+        <FiltersModal
           onClose={() => setShowFilters(false)}
           filters={filters}
           setFilters={handleSetFilters}
         />
       )}
       {showProfile && (
-        <ProfileModal 
+        <ProfileModal
           onClose={() => setShowProfile(false)}
           user={user}
           userData={userData}
           partnerId={partnerId}
+          partnerProfile={partnerData}
           setPartnerId={handleSetPartnerId}
+          syncOk={syncOk}
         />
       )}
     </div>

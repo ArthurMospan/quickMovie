@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect } from 'react';
 import { Heart, Check, Users, Film, Trash2 } from 'lucide-react';
 import { getMediaById } from '../services/tmdb';
 
-export default function WishlistView({ mySaves, partnerSaves, partnerId, onToggleSave, onToggleWatched, watched, onGoToProfile }) {
+export default function WishlistView({ mySaves, partnerSaves, partnerId, partnerProfile, onToggleSave, onToggleWatched, watched, onGoToProfile }) {
   const [tab, setTab] = useState('mine');
   const [moviesCache, setMoviesCache] = useState({});
   const [loading, setLoading] = useState(false);
@@ -69,6 +69,25 @@ export default function WishlistView({ mySaves, partnerSaves, partnerId, onToggl
 
       {/* Scrollable Content */}
       <div className="flex-1 overflow-y-auto px-4 pb-10 scrollbar-hide">
+
+        {/* Partner info bar (matches tab) */}
+        {tab === 'matches' && partnerId && (
+          <div className="flex items-center gap-2.5 bg-white/[0.05] rounded-2xl px-3.5 py-2.5 mb-4 animate-in">
+            {partnerProfile?.photo ? (
+              <img src={partnerProfile.photo} alt="" referrerPolicy="no-referrer" className="w-8 h-8 rounded-full object-cover ring-1 ring-white/15" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+            ) : (
+              <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center"><Users size={14} className="text-white/50" /></div>
+            )}
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-white truncate">
+                {partnerProfile?.name ? `Спільно з ${partnerProfile.name}` : 'Партнер ще не відкрив додаток'}
+              </p>
+              <p className="text-[10px] text-white/40">
+                У партнера збережено: {partnerSaves.length} · збігів: {matchItems.length}
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* No partner message */}
         {tab === 'matches' && !partnerId && (

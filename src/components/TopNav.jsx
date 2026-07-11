@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Search, Sparkles, User } from 'lucide-react';
+import { Search, User, Smartphone } from 'lucide-react';
 
 function TabButton({ children, active, onClick }) {
   return (
@@ -21,23 +21,29 @@ export default function TopNav({ activeTab, setActiveTab, onProfileClick, userPh
       style={{ paddingTop: 'calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 64px)' }}
     >
 
-      {/* Left: AI Magic Search Button */}
+      {/* Left: AI Search Button (plain magnifier) */}
       <button
         onClick={() => setActiveTab('ai')}
-        className={`pointer-events-auto relative flex items-center justify-center w-10 h-10 rounded-full transition-all duration-300 group backdrop-blur-md border shadow-lg active:scale-90 ${
+        className={`pointer-events-auto flex items-center justify-center w-10 h-10 rounded-full transition-all duration-300 backdrop-blur-md border shadow-lg active:scale-90 ${
           activeTab === 'ai'
-            ? 'bg-zinc-500/30 border-zinc-500/50'
+            ? 'bg-white/25 border-white/30'
             : 'bg-white/10 border-white/10 hover:bg-white/20'
         }`}
       >
-        <Search size={18} className={`transition-colors ${activeTab === 'ai' ? 'text-zinc-300' : 'text-white'}`} />
-        <Sparkles size={10} className={`absolute top-2 right-2 transition-colors ${activeTab === 'ai' ? 'text-zinc-400' : 'text-zinc-300 opacity-80'}`} />
+        <Search size={18} className="text-white" />
       </button>
 
-      {/* Center: TikTok Tabs */}
-      <div className="flex gap-5 items-center pointer-events-auto">
+      {/* Center: Tabs + unobtrusive rotate hint below the white line */}
+      <div className="relative flex gap-5 items-center pointer-events-auto">
         <TabButton active={activeTab === 'feed'} onClick={() => setActiveTab('feed')}>Огляд</TabButton>
         <TabButton active={activeTab === 'watchlist'} onClick={() => setActiveTab('watchlist')}>Watchlist</TabButton>
+
+        {activeTab === 'feed' && (
+          <div className="portrait-hint absolute top-full left-1/2 -translate-x-1/2 mt-1.5 flex items-center gap-1.5 whitespace-nowrap pointer-events-none">
+            <Smartphone size={10} className="tilt-anim text-white/40" />
+            <span className="text-[10px] font-medium text-white/40">Розверніть для зручності</span>
+          </div>
+        )}
       </div>
 
       {/* Right: Profile Avatar */}

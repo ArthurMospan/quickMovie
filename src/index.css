@@ -88,6 +88,16 @@ html, body {
   animation: shimmer 1.5s infinite;
 }
 
+/* Phone-tilt hint animation (icon gently rotates to landscape and back) */
+@keyframes tiltPhone {
+  0%, 50%, 100% { transform: rotate(0deg); }
+  20%, 35% { transform: rotate(-90deg); }
+}
+.tilt-anim {
+  animation: tiltPhone 3.2s ease-in-out infinite;
+  transform-origin: center;
+}
+
 /* --- Line Clamp --- */
 .line-clamp-2 {
   display: -webkit-box;
@@ -160,6 +170,11 @@ html, body {
 
   /* Filter pill hidden in landscape */
   .filter-pill {
+    display: none !important;
+  }
+
+  /* Rotate hint is portrait-only */
+  .portrait-hint {
     display: none !important;
   }
 }

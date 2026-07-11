@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Heart, Share2, Star, CheckCircle2, VolumeX, Volume2, Bell, Play, Pause, RotateCcw } from 'lucide-react';
+import { Heart, Share2, Star, CheckCircle2, VolumeX, Volume2, Bell, Play, Pause } from 'lucide-react';
 
 // How many px of the YouTube player we crop from top & bottom.
 // YouTube UI (title bar, avatar, "watch on youtube", watermark, controls)
@@ -43,25 +43,12 @@ export default function VideoCard({
   const [isPlaying, setIsPlaying] = useState(false);
   const [speedState, setSpeedState] = useState(1);
   const [copied, setCopied] = useState(false);
-  const [showLandscapeHint, setShowLandscapeHint] = useState(false);
   const speeds = [1, 1.2, 1.5, 2];
   const upcoming = useMemo(() => isUpcoming(movie.release_date), [movie.release_date]);
 
   const thumbnailUrl = movie.trailerKey
     ? `https://img.youtube.com/vi/${movie.trailerKey}/maxresdefault.jpg`
     : (movie.backdrop_path ? `https://image.tmdb.org/t/p/w1280${movie.backdrop_path}` : null);
-
-  // Show landscape hint once per install (v2 key so users see it after the update)
-  useEffect(() => {
-    if (active && isFirstVideo && !localStorage.getItem('qm_landscape_v2')) {
-      const t = setTimeout(() => {
-        setShowLandscapeHint(true);
-        localStorage.setItem('qm_landscape_v2', '1');
-        setTimeout(() => setShowLandscapeHint(false), 5000);
-      }, 3000);
-      return () => clearTimeout(t);
-    }
-  }, [active, isFirstVideo]);
 
   const sendCommand = (func, args = []) => {
     try {
@@ -226,19 +213,6 @@ export default function VideoCard({
             <p className="text-white/50 text-xs">Або свайпайте далі без звуку</p>
           </div>
         </button>
-      )}
-
-      {/* Landscape Hint (one-time) */}
-      {showLandscapeHint && (
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-none animate-in">
-          <div className="bg-black/70 backdrop-blur-xl border border-white/20 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-2xl">
-            <RotateCcw size={24} className="text-white/80 animate-spin" style={{ animationDuration: '3s' }} />
-            <div>
-              <p className="text-white font-bold text-sm">Розверніть телефон 📱</p>
-              <p className="text-white/50 text-[11px]">Трейлер розгорнеться на весь екран</p>
-            </div>
-          </div>
-        </div>
       )}
 
       {/* Right Actions (portrait: right column; landscape: bottom row via CSS) */}
