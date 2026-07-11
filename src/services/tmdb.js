@@ -205,6 +205,23 @@ export const getMovieById = async (id) => {
   });
 };
 
+// --- Get Media by ID (movie or TV — tries movie first, falls back to TV) ---
+export const getMediaById = async (id) => {
+  try {
+    const movie = await fetchFromTMDB(`/movie/${id}`, { language: 'uk-UA' });
+    if (movie && movie.id) return { ...movie, media_type: 'movie' };
+  } catch (e) {
+    // Movie not found, try TV
+  }
+  try {
+    const tv = await fetchFromTMDB(`/tv/${id}`, { language: 'uk-UA' });
+    if (tv && tv.id) return { ...tv, title: tv.name, release_date: tv.first_air_date, media_type: 'tv' };
+  } catch (e) {
+    // TV not found either
+  }
+  return null;
+};
+
 // --- Extract Trailer Key ---
 // Accepts any YouTube video: Trailer > Teaser > Clip > Featurette > any
 export const getTrailerKey = (details) => {

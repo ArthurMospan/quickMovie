@@ -10,7 +10,8 @@ import {
   getMovieDetailsWithVideos, 
   getTVDetailsWithVideos,
   getTrailerKey, 
-  getCreditsInfo 
+  getCreditsInfo,
+  getGenreList
 } from './services/tmdb';
 import { 
   getTelegramUser,
@@ -21,14 +22,45 @@ import {
   toggleMovieWatched,
   updateUserPartnerId
 } from './services/firebase';
-import { SlidersHorizontal, Film } from 'lucide-react';
+import { SlidersHorizontal, Film, Play } from 'lucide-react';
 
 // Random start page for variety (1-500 max allowed by TMDB)
 const getRandomStartPage = () => Math.floor(Math.random() * 500) + 1;
 
+// Country code to name map
+const COUNTRY_NAMES = {
+  US: 'США', GB: 'UK', KR: '🇰🇷', JP: '🇯🇵', FR: '🇫🇷', DE: '🇩🇪',
+  IN: '🇮🇳', UA: '🇺🇦', AU: '🇦🇺', ES: '🇪🇸', IT: '🇮🇹', TR: '🇹🇷'
+};
+
+// Generate short filter description
+function getFilterSummary(filters, genreMap) {
+  const parts = [];
+  if (filters.type === 'movie') parts.push('🎬 Фільми');
+  if (filters.type === 'series') parts.push('📺 Серіали');
+  if (filters.genreId && genreMap[filters.genreId]) parts.push(genreMap[filters.genreId]);
+  if (filters.country) parts.push(COUNTRY_NAMES[filters.country] || filters.country);
+  if (filters.minRating > 0) parts.push(`⭐${filters.minRating}+`);
+  if (filters.personName) parts.push(filters.personName.split(' ')[0]);
+  if (filters.yearFrom || filters.yearTo) {
+    if (filters.yearFrom && filters.yearTo) {
+      parts.push(`${filters.yearFrom}-${filters.yearTo}`);
+    } else if (filters.yearFrom) {
+      parts.push(`з ${filters.yearFrom}`);
+    } else {
+      parts.push(`до ${filters.yearTo}`);
+    }
+  }
+  const text = parts.join(' · ');
+  return text.length > 42 ? text.slice(0, 40) + '…' : text;
+}
+
 export default function App() {
   // --- Tab State ---
   const [activeTab, setActiveTab] = useState('feed');
+
+  // --- Welcome Screen ---
+  const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('qm_welcomed'));
 
   // --- Feed State ---
   const [movies, setMovies] = useState([]);
@@ -52,6 +84,9 @@ export default function App() {
   // --- Global Audio State ---
   const [isGlobalMuted, setIsGlobalMuted] = useState(true);
 
+  // --- Genre map for filter summary ---
+  const [genreMap, setGenreMap] = useState({});
+
   // --- Filters ---
   const [filters, setFilters] = useState({
     type: 'all',
@@ -63,6 +98,15 @@ export default function App() {
     yearFrom: null,
     yearTo: null
   });
+
+  // Load genre map
+  useEffect(() => {
+    getGenreList().then(genres => {
+      const map = {};
+      genres.forEach(g => { map[g.id] = g.name; });
+      setGenreMap(map);
+    }).catch(() => {});
+  }, []);
 
   // --- Init Telegram User ---
   useEffect(() => {
@@ -214,12 +258,13 @@ export default function App() {
   const hasActiveFilters = filters.genreId || filters.country || filters.minRating > 0 || filters.personId || filters.yearFrom || filters.yearTo || filters.type !== 'all';
 
   useEffect(() => {
+    if (showWelcome) return; // Don't load until welcome is dismissed
     const startPage = hasActiveFilters ? 1 : getRandomStartPage();
     setMovies([]);
     setPage(startPage);
     setActiveIndex(0);
     loadMovies(startPage, true);
-  }, [filters]);
+  }, [filters, showWelcome]);
 
   // --- Save/restore scroll when switching tabs ---
   useEffect(() => {
@@ -300,9 +345,66 @@ export default function App() {
     setFilters(newFilters);
   };
 
+  // --- Welcome dismiss ---
+  const handleDismissWelcome = () => {
+    setShowWelcome(false);
+    localStorage.setItem('qm_welcomed', '1');
+  };
+
   // --- Filtered movies for feed ---
   const feedMovies = movies.filter(m => m.trailerKey);
 
+  // --- Filter summary text ---
+  const filterSummary = getFilterSummary(filters, genreMap);
+  const hasFilters = filterSummary.length > 0;
+
+  // =================== WELCOME SCREEN ===================
+  if (showWelcome) {
+    return (
+      <div className="min-h-[100dvh] bg-black text-white flex flex-col items-center justify-center p-8 relative overflow-hidden">
+        {/* Background glow */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[300px] h-[300px] bg-purple-600/20 rounded-full blur-[120px]"></div>
+          <div className="absolute bottom-1/3 left-1/3 w-[200px] h-[200px] bg-blue-500/15 rounded-full blur-[100px]"></div>
+        </div>
+        
+        <div className="relative z-10 flex flex-col items-center animate-in">
+          {/* Logo */}
+          <img src="/logo.png" alt="QuickMovie" className="w-24 h-24 rounded-3xl mb-6 shadow-2xl" />
+          
+          {/* Title */}
+          <h1 className="text-3xl font-bold mb-2 tracking-tight">QuickMovie</h1>
+          <p className="text-white/50 text-sm mb-8 text-center max-w-[260px] leading-relaxed">
+            Свайпай трейлери як TikTok. Зберігай. Дивись разом з друзями.
+          </p>
+
+          {/* Features */}
+          <div className="space-y-3 mb-10 w-full max-w-[280px]">
+            {[
+              { emoji: '🎬', text: 'Трейлери фільмів та серіалів' },
+              { emoji: '🤖', text: 'ШІ знайде фільм за описом' },
+              { emoji: '❤️', text: 'Спільний вішліст з друзями' },
+            ].map((item, i) => (
+              <div key={i} className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
+                <span className="text-lg">{item.emoji}</span>
+                <span className="text-sm text-white/80 font-medium">{item.text}</span>
+              </div>
+            ))}
+          </div>
+          
+          {/* Start Button */}
+          <button 
+            onClick={handleDismissWelcome}
+            className="w-full max-w-[280px] bg-white text-black font-bold py-4 rounded-2xl text-base active:scale-95 transition-all flex items-center justify-center gap-2 shadow-[0_0_40px_rgba(255,255,255,0.15)]"
+          >
+            <Play size={18} fill="black" /> Почати пошук
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // =================== MAIN APP ===================
   return (
     <div className="min-h-[100dvh] bg-black text-white font-sans relative overflow-hidden">
       
@@ -362,25 +464,15 @@ export default function App() {
           </div>
         )}
 
-        {/* Filter Button (floating, subtle) */}
+        {/* Filter Button (floating, with description) */}
         <button 
           onClick={() => setShowFilters(true)}
-          className="absolute left-1/2 -translate-x-1/2 z-30 bg-black/20 backdrop-blur-md border border-white/5 px-3 py-1.5 rounded-full flex items-center gap-1.5 active:scale-95 transition-transform opacity-60 hover:opacity-100"
+          className="absolute left-1/2 -translate-x-1/2 z-30 bg-black/30 backdrop-blur-md border border-white/10 px-3.5 py-2 rounded-full flex items-center gap-2 active:scale-95 transition-transform hover:bg-black/50 max-w-[90vw]"
           style={{ top: 'calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 120px)' }}
         >
-          <SlidersHorizontal size={12} className="text-white/70" />
-          <span className="text-[10px] font-bold text-white/70 tracking-widest uppercase">
-            Фільтри
-            {(() => {
-              let count = 0;
-              if (filters.type !== 'all') count++;
-              if (filters.genreId) count++;
-              if (filters.country) count++;
-              if (filters.minRating > 0) count++;
-              if (filters.personId) count++;
-              if (filters.yearFrom || filters.yearTo) count++;
-              return count > 0 ? ` (${count})` : '';
-            })()}
+          <SlidersHorizontal size={12} className="text-white/70 shrink-0" />
+          <span className="text-[10px] font-bold text-white/70 tracking-wide uppercase truncate">
+            {hasFilters ? filterSummary : 'Фільтри'}
           </span>
         </button>
       </div>

@@ -101,3 +101,26 @@ html, body {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* --- Landscape Mode Styles --- */
+@media (orientation: landscape) and (max-height: 500px) {
+  /* Hide UI elements in landscape to prioritize video */
+  .landscape-actions {
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+  .landscape-info {
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+  /* TopNav could also be hidden if we wanted, but keeping it small is okay.
+     Usually we want full screen video. */
+  
+  /* Make the iframe fill more space */
+  .aspect-video {
+    width: 100vw !important;
+    height: 100vh !important;
+    max-width: none !important;
+    object-fit: contain;
+  }
+}

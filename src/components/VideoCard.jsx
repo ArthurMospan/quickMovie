@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Heart, Share2, Star, CheckCircle2, VolumeX, Volume2, Bell, Play, Pause } from 'lucide-react';
+import { Heart, Share2, Star, CheckCircle2, VolumeX, Volume2, Bell, Play, Pause, RotateCcw } from 'lucide-react';
 
 function ActionBtn({ icon, label, onClick }) {
   return (
@@ -38,12 +38,25 @@ export default function VideoCard({
   const [isPlaying, setIsPlaying] = useState(false);
   const [speedState, setSpeedState] = useState(1);
   const [copied, setCopied] = useState(false);
+  const [showLandscapeHint, setShowLandscapeHint] = useState(false);
   const speeds = [1, 1.2, 1.5, 2];
   const upcoming = useMemo(() => isUpcoming(movie.release_date), [movie.release_date]);
 
   const thumbnailUrl = movie.trailerKey 
     ? `https://img.youtube.com/vi/${movie.trailerKey}/maxresdefault.jpg`
     : (movie.backdrop_path ? `https://image.tmdb.org/t/p/w1280${movie.backdrop_path}` : null);
+
+  // Show landscape hint once
+  useEffect(() => {
+    if (active && isFirstVideo && !localStorage.getItem('qm_landscape_shown')) {
+      const t = setTimeout(() => {
+        setShowLandscapeHint(true);
+        localStorage.setItem('qm_landscape_shown', '1');
+        setTimeout(() => setShowLandscapeHint(false), 5000);
+      }, 3000);
+      return () => clearTimeout(t);
+    }
+  }, [active, isFirstVideo]);
 
   const sendCommand = (func, args = []) => {
     try {
@@ -143,17 +156,25 @@ export default function VideoCard({
         <div className="absolute inset-0 bg-black/40"></div>
       </div>
 
-      {/* 2. Video Player */}
+      {/* 2. Video Player with YouTube UI masking */}
       <div className="relative z-10 w-full h-full flex items-center justify-center pointer-events-none">
         {active ? (
-          <iframe
-            ref={iframeRef}
-            className="w-full aspect-video shadow-[0_0_50px_rgba(0,0,0,0.8)]"
-            src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&loop=1&playlist=${movie.trailerKey}&enablejsapi=1&disablekb=1&fs=0&iv_load_policy=3`}
-            frameBorder="0" 
-            allow="autoplay; encrypted-media; picture-in-picture; accelerometer; gyroscope"
-            allowFullScreen
-          ></iframe>
+          <div className="relative w-full" style={{ aspectRatio: '16/9' }}>
+            <iframe
+              ref={iframeRef}
+              className="absolute inset-0 w-full h-full shadow-[0_0_50px_rgba(0,0,0,0.8)]"
+              src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&loop=1&playlist=${movie.trailerKey}&enablejsapi=1&disablekb=1&fs=0&iv_load_policy=3&showinfo=0&cc_load_policy=0&origin=${encodeURIComponent(window.location.origin)}`}
+              frameBorder="0" 
+              allow="autoplay; encrypted-media; picture-in-picture; accelerometer; gyroscope"
+              allowFullScreen
+            ></iframe>
+            {/* YouTube UI masking overlays */}
+            <div className="absolute top-0 left-0 right-0 h-[60px] bg-gradient-to-b from-black via-black/80 to-transparent pointer-events-none z-[5]"></div>
+            <div className="absolute bottom-0 left-0 right-0 h-[50px] bg-gradient-to-t from-black via-black/80 to-transparent pointer-events-none z-[5]"></div>
+            {/* Left/right thin strips to hide side overlays */}
+            <div className="absolute top-0 bottom-0 left-0 w-[6px] bg-black pointer-events-none z-[5]"></div>
+            <div className="absolute top-0 bottom-0 right-0 w-[6px] bg-black pointer-events-none z-[5]"></div>
+          </div>
         ) : (
           thumbnailUrl && (
             <img src={thumbnailUrl} alt="" className="w-full aspect-video object-cover shadow-[0_0_50px_rgba(0,0,0,0.8)]" loading="lazy" />
@@ -198,8 +219,21 @@ export default function VideoCard({
         </button>
       )}
 
+      {/* Landscape Hint (one-time) */}
+      {showLandscapeHint && (
+        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-50 pointer-events-none animate-in">
+          <div className="bg-black/70 backdrop-blur-xl border border-white/20 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-2xl">
+            <RotateCcw size={24} className="text-white/80 animate-spin" style={{ animationDuration: '3s' }} />
+            <div>
+              <p className="text-white font-bold text-sm">Розверніть телефон</p>
+              <p className="text-white/50 text-[11px]">Для повноекранного перегляду</p>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Right Actions */}
-      <div className={`absolute right-3 bottom-20 flex flex-col items-center gap-4 z-30 pointer-events-auto transition-opacity duration-300 ${active ? 'opacity-100' : 'opacity-0'}`}>
+      <div className={`absolute right-3 flex flex-col items-center gap-4 z-30 pointer-events-auto transition-opacity duration-300 landscape-actions ${active ? 'opacity-100' : 'opacity-0'}`} style={{ bottom: '5rem' }}>
         <ActionBtn 
           icon={<Heart size={24} className={isSaved ? 'fill-white text-white' : 'text-white'} />} 
           label={isSaved ? "У watchlist" : "Зберегти"} 
@@ -233,7 +267,7 @@ export default function VideoCard({
       </div>
 
       {/* Bottom Info */}
-      <div className={`absolute bottom-4 left-4 right-20 z-30 flex flex-col gap-1.5 pointer-events-none text-white drop-shadow-lg transition-opacity duration-300 ${active ? 'opacity-100' : 'opacity-0'}`}>
+      <div className={`absolute bottom-4 left-4 right-20 z-30 flex flex-col gap-1.5 pointer-events-none text-white drop-shadow-lg transition-opacity duration-300 landscape-info ${active ? 'opacity-100' : 'opacity-0'}`}>
         {upcoming && (
           <span className="bg-white text-black px-2 py-0.5 rounded text-[10px] font-bold self-start mb-0.5">
             Вихід: {formatDateUA(movie.release_date)}

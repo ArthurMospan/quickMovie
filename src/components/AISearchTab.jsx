@@ -1,27 +1,39 @@
-import { useState } from 'react';
-import { Sparkles, Loader2 } from 'lucide-react';
+import { useState, useRef, useEffect } from 'react';
+import { Sparkles, Send, Loader2, Play, Star, RotateCcw } from 'lucide-react';
 import { guessMovieFromDescription, extractEnglishTitle } from '../services/gemini';
 import { searchMovie, getMovieDetailsWithVideos, getTrailerKey } from '../services/tmdb';
 
 export default function AISearchTab({ onWatchTrailer }) {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
-  const [result, setResult] = useState(null); // null | { text, movie? }
-  const [error, setError] = useState('');
+  const [messages, setMessages] = useState([]);
+  const messagesEndRef = useRef(null);
+  const inputRef = useRef(null);
+
+  // Auto-scroll to bottom
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages, loading]);
 
   const handleAISearch = async () => {
     if (loading || !query.trim()) return;
+    const userMessage = query.trim();
+    setQuery('');
     setLoading(true);
-    setError('');
-    setResult(null);
+    
+    // Add user message
+    setMessages(prev => [...prev, { type: 'user', text: userMessage }]);
     
     try {
       // 1. Ask Gemini to guess the movie
-      console.log('Gemini Request Started at:', new Date().toISOString());
-      const geminiAnswer = await guessMovieFromDescription(query);
+      const geminiAnswer = await guessMovieFromDescription(userMessage);
       
       if (geminiAnswer.includes('Не вдалося розпізнати')) {
-        setResult({ text: geminiAnswer });
+        setMessages(prev => [...prev, { 
+          type: 'ai', 
+          text: 'Не вдалося розпізнати фільм за описом 😔 Спробуйте описати більше деталей — сюжет, акторів, або рік випуску.',
+          movie: null 
+        }]);
         setLoading(false);
         return;
       }
@@ -33,7 +45,12 @@ export default function AISearchTab({ onWatchTrailer }) {
       const searchRes = await searchMovie(searchTitle);
       
       if (!searchRes.results || searchRes.results.length === 0) {
-        setResult({ text: geminiAnswer });
+        setMessages(prev => [...prev, { 
+          type: 'ai', 
+          text: geminiAnswer,
+          subtext: 'Не знайдено у базі TMDB, але здається це:',
+          movie: null 
+        }]);
         setLoading(false);
         return;
       }
@@ -44,112 +61,205 @@ export default function AISearchTab({ onWatchTrailer }) {
       const fullDetails = await getMovieDetailsWithVideos(bestMatch.id);
       const trailerKey = getTrailerKey(fullDetails);
 
-      setResult({
+      setMessages(prev => [...prev, { 
+        type: 'ai', 
         text: geminiAnswer,
         movie: {
-          ...bestMatch,
+          id: bestMatch.id,
+          title: fullDetails.title || bestMatch.title,
           overview: fullDetails.overview || bestMatch.overview,
+          backdrop_path: bestMatch.backdrop_path || fullDetails.backdrop_path,
+          poster_path: bestMatch.poster_path || fullDetails.poster_path,
+          release_date: fullDetails.release_date || bestMatch.release_date,
+          vote_average: fullDetails.vote_average || bestMatch.vote_average,
           trailerKey
         }
-      });
+      }]);
       
     } catch (err) {
-      setError(err.message || 'Помилка підключення до ШІ.');
+      setMessages(prev => [...prev, { 
+        type: 'ai', 
+        text: `Помилка: ${err.message || 'Не вдалося підключитися до ШІ'} 😵`,
+        isError: true,
+        movie: null 
+      }]);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleAISearch();
+    }
+  };
+
+  const handleClearChat = () => {
+    setMessages([]);
+    setQuery('');
+  };
+
   return (
-    <div className="h-[100dvh] overflow-y-auto bg-black pt-24 pb-10 px-6 flex flex-col items-center scrollbar-hide">
-      <div className="w-full max-w-sm bg-white/5 border border-white/10 rounded-3xl p-6 backdrop-blur-md animate-in">
+    <div className="absolute inset-0 z-10 flex flex-col bg-[#0a0a0a]" style={{ paddingTop: 'calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 100px)' }}>
+      
+      {/* Messages Area */}
+      <div className="flex-1 overflow-y-auto px-4 pb-4 scrollbar-hide">
         
-        {/* Header */}
-        <div className="flex items-center gap-3 mb-6">
-          <div className="p-3 bg-white/10 rounded-2xl border border-white/10">
-            <Sparkles className="text-white" size={24} />
-          </div>
-          <div>
-            <h3 className="text-xl font-bold text-white">Кіно-ШІ</h3>
-            <p className="text-xs text-white/60">Знайде фільм за сюжетом</p>
-          </div>
-        </div>
-
-        {/* Input */}
-        <textarea 
-          placeholder="Наприклад: чувак летить у чорну діру і там книжкова полиця..."
-          value={query}
-          onChange={(e) => setQuery(e.target.value)}
-          className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 text-sm text-white resize-none h-28 focus:outline-none focus:border-white/30 mb-4 placeholder-white/30 backdrop-blur-md transition-colors"
-        ></textarea>
-
-        {/* Search Button */}
-        <button 
-          onClick={handleAISearch}
-          disabled={loading || !query.trim()}
-          className="w-full bg-white/10 border border-white/10 text-white font-bold py-3.5 rounded-xl active:scale-95 transition-transform disabled:opacity-50 disabled:scale-100 flex justify-center items-center gap-2 backdrop-blur-md hover:bg-white/20"
-        >
-          {loading ? (
-            <>
-              <Loader2 size={16} className="animate-spin" />
-              <span>Шукаю в базі...</span>
-            </>
-          ) : (
-            "Знайти фільм"
-          )}
-        </button>
-
-        {/* Error */}
-        {error && (
-          <div className="mt-4 p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm text-center font-medium animate-in">
-            {error}
+        {/* Welcome / Empty State */}
+        {messages.length === 0 && (
+          <div className="flex flex-col items-center justify-center h-full text-center px-4 animate-in">
+            <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-purple-600/30 to-blue-500/30 border border-purple-500/20 flex items-center justify-center mb-4">
+              <Sparkles size={28} className="text-purple-400" />
+            </div>
+            <h3 className="text-xl font-bold text-white mb-2">Кіно-ШІ</h3>
+            <p className="text-sm text-white/50 mb-6 max-w-[260px]">Опишіть фільм своїми словами, і я знайду його для вас</p>
+            
+            {/* Suggestion chips */}
+            <div className="flex flex-wrap gap-2 justify-center max-w-sm">
+              {[
+                'Чувак летить у чорну діру',
+                'Фільм про сни всередині снів',
+                'Хлопець знаходить кільце зла',
+              ].map((hint, i) => (
+                <button 
+                  key={i}
+                  onClick={() => { setQuery(hint); inputRef.current?.focus(); }}
+                  className="px-3 py-2 bg-white/5 border border-white/10 rounded-xl text-xs text-white/60 hover:bg-white/10 hover:text-white/80 transition-all active:scale-95"
+                >
+                  {hint}
+                </button>
+              ))}
+            </div>
           </div>
         )}
 
-        {/* Result */}
-        {result && (
-          <div className="mt-6 animate-in">
-            {/* AI Answer */}
-            <div className="p-4 bg-white/10 rounded-2xl border border-white/10 text-center backdrop-blur-md mb-4">
-              <p className="text-[10px] text-white/40 uppercase tracking-widest mb-1 font-bold">Здається, це:</p>
-              <p className="text-lg font-bold text-white">{result.text}</p>
-            </div>
-
-            {/* Movie Card (if found on TMDB) */}
-            {result.movie && (
-              <div className="bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
-                {result.movie.backdrop_path && (
-                  <div className="relative aspect-video w-full">
-                    <img 
-                      src={`https://image.tmdb.org/t/p/w780${result.movie.backdrop_path}`} 
-                      alt="" 
-                      className="w-full h-full object-cover opacity-70" 
-                    />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black via-black/40 to-transparent" />
-                    <div className="absolute bottom-3 left-3 right-3">
-                      <h4 className="text-white font-bold text-sm">{result.movie.title}</h4>
-                      <p className="text-white/60 text-xs line-clamp-2 mt-0.5">{result.movie.overview}</p>
-                    </div>
+        {/* Chat Messages */}
+        {messages.map((msg, i) => (
+          <div key={i} className={`mb-4 flex ${msg.type === 'user' ? 'justify-end' : 'justify-start'} animate-in`}>
+            {msg.type === 'user' ? (
+              /* User bubble */
+              <div className="max-w-[80%] bg-white/15 backdrop-blur-sm border border-white/10 rounded-2xl rounded-br-md px-4 py-3">
+                <p className="text-sm text-white font-medium">{msg.text}</p>
+              </div>
+            ) : (
+              /* AI bubble */
+              <div className="max-w-[85%] flex gap-2.5">
+                <div className="shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-purple-600 to-blue-500 flex items-center justify-center mt-1">
+                  <Sparkles size={14} className="text-white" />
+                </div>
+                <div className="flex-1 space-y-3">
+                  {/* Text response */}
+                  <div className={`bg-white/5 border border-white/10 rounded-2xl rounded-tl-md px-4 py-3 ${msg.isError ? 'border-red-500/30 bg-red-500/5' : ''}`}>
+                    {msg.subtext && <p className="text-[10px] text-white/40 mb-1">{msg.subtext}</p>}
+                    <p className="text-sm text-white/90 font-medium">{msg.text}</p>
                   </div>
-                )}
-                
-                <div className="p-4 flex items-center justify-between">
-                  <span className="text-xs text-white/50 font-medium">
-                    {result.movie.release_date?.split('-')[0] || '—'}
-                  </span>
-                  {result.movie.trailerKey && onWatchTrailer && (
-                    <button 
-                      onClick={() => onWatchTrailer(result.movie)}
-                      className="bg-purple-600 hover:bg-purple-500 text-white px-5 py-2 rounded-xl text-sm font-bold flex items-center gap-1.5 active:scale-95 transition-all shadow-[0_0_15px_rgba(168,85,247,0.3)]"
-                    >
-                      ▶ Дивитись трейлер
-                    </button>
+                  
+                  {/* Movie card */}
+                  {msg.movie && (
+                    <div className="bg-[#111] border border-white/10 rounded-2xl overflow-hidden">
+                      {msg.movie.backdrop_path && (
+                        <div className="relative aspect-video w-full">
+                          <img 
+                            src={`https://image.tmdb.org/t/p/w780${msg.movie.backdrop_path}`} 
+                            alt="" 
+                            className="w-full h-full object-cover" 
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-[#111] via-black/30 to-transparent" />
+                          <div className="absolute bottom-3 left-3 right-3">
+                            <h4 className="text-white font-bold text-sm">{msg.movie.title}</h4>
+                          </div>
+                        </div>
+                      )}
+                      
+                      <div className="p-3 space-y-2">
+                        {msg.movie.overview && (
+                          <p className="text-xs text-white/50 line-clamp-2">{msg.movie.overview}</p>
+                        )}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-3 text-xs text-white/50">
+                            <span className="flex items-center gap-1">
+                              <Star size={11} className="text-yellow-500 fill-yellow-500" />
+                              {(msg.movie.vote_average || 0).toFixed(1)}
+                            </span>
+                            <span>{msg.movie.release_date?.split('-')[0] || '—'}</span>
+                          </div>
+                          {msg.movie.trailerKey && onWatchTrailer && (
+                            <button 
+                              onClick={() => onWatchTrailer(msg.movie)}
+                              className="bg-white text-black px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-1.5 active:scale-95 transition-all"
+                            >
+                              <Play size={12} fill="black" /> Трейлер
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
             )}
           </div>
+        ))}
+
+        {/* Typing Indicator */}
+        {loading && (
+          <div className="mb-4 flex justify-start animate-in">
+            <div className="flex gap-2.5">
+              <div className="shrink-0 w-7 h-7 rounded-full bg-gradient-to-br from-purple-600 to-blue-500 flex items-center justify-center">
+                <Sparkles size={14} className="text-white" />
+              </div>
+              <div className="bg-white/5 border border-white/10 rounded-2xl rounded-tl-md px-4 py-3 flex items-center gap-2">
+                <div className="flex gap-1">
+                  <div className="w-2 h-2 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                  <div className="w-2 h-2 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                  <div className="w-2 h-2 bg-white/40 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                </div>
+                <span className="text-xs text-white/40 ml-1">Шукаю фільм...</span>
+              </div>
+            </div>
+          </div>
         )}
+
+        <div ref={messagesEndRef} />
+      </div>
+
+      {/* Input Bar — fixed at bottom */}
+      <div className="shrink-0 px-4 pb-5 pt-2 bg-gradient-to-t from-[#0a0a0a] via-[#0a0a0a] to-transparent">
+        {/* Clear chat button */}
+        {messages.length > 0 && (
+          <button 
+            onClick={handleClearChat}
+            className="mx-auto mb-2 flex items-center gap-1.5 text-[10px] text-white/30 hover:text-white/50 transition-colors font-semibold uppercase tracking-wider"
+          >
+            <RotateCcw size={10} /> Очистити чат
+          </button>
+        )}
+        <div className="flex gap-2 items-end">
+          <div className="flex-1 bg-white/5 border border-white/10 rounded-2xl overflow-hidden">
+            <textarea 
+              ref={inputRef}
+              placeholder="Опишіть фільм..."
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleKeyDown}
+              rows={1}
+              className="w-full bg-transparent px-4 py-3 text-sm text-white resize-none focus:outline-none placeholder-white/30 max-h-[100px]"
+              style={{ minHeight: '44px' }}
+            ></textarea>
+          </div>
+          <button 
+            onClick={handleAISearch}
+            disabled={loading || !query.trim()}
+            className="shrink-0 w-11 h-11 rounded-xl bg-white text-black flex items-center justify-center active:scale-90 transition-all disabled:opacity-30 disabled:scale-100"
+          >
+            {loading ? (
+              <Loader2 size={18} className="animate-spin" />
+            ) : (
+              <Send size={18} />
+            )}
+          </button>
+        </div>
       </div>
     </div>
   );

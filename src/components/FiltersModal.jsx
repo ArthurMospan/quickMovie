@@ -1,4 +1,4 @@
-import { useState, useMemo, useEffect } from 'react';
+import { useState, useMemo, useEffect, useRef } from 'react';
 import { SlidersHorizontal, Search, XCircle } from 'lucide-react';
 import { getGenreList, searchPerson } from '../services/tmdb';
 
@@ -21,6 +21,14 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
 
   // Local filter state (applied on submit)
   const [local, setLocal] = useState({ ...filters });
+
+  // Drag-to-dismiss state
+  const sheetRef = useRef(null);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const touchStartRef = useRef({ y: 0, time: 0 });
+  const scrollRef = useRef(null);
 
   useEffect(() => {
     getGenreList().then(setGenres).catch(console.error);
@@ -47,13 +55,65 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
 
   const handleApply = () => {
     setFilters(local);
-    onClose();
+    animateClose();
   };
 
   const handleReset = () => {
     const reset = { type: 'all', genreId: null, country: '', minRating: 0, personId: null, personName: '', yearFrom: null, yearTo: null };
     setLocal(reset);
     setPersonInput('');
+  };
+
+  // Animate close
+  const animateClose = () => {
+    setIsClosing(true);
+    setTimeout(() => onClose(), 300);
+  };
+
+  // --- Drag to dismiss handlers ---
+  const handleTouchStart = (e) => {
+    // Only initiate drag if scrollable content is at top
+    const scrollEl = scrollRef.current;
+    if (scrollEl && scrollEl.scrollTop > 0) return;
+    
+    touchStartRef.current = { 
+      y: e.touches[0].clientY, 
+      time: Date.now() 
+    };
+    setIsDragging(true);
+  };
+
+  const handleTouchMove = (e) => {
+    if (!isDragging) return;
+    
+    const currentY = e.touches[0].clientY;
+    const diff = currentY - touchStartRef.current.y;
+    
+    // Only allow dragging downward
+    if (diff < 0) {
+      setDragOffset(0);
+      return;
+    }
+    
+    // Apply resistance — the further you drag, the harder it gets
+    const resistance = diff > 100 ? 0.4 : 0.8;
+    setDragOffset(diff * resistance);
+  };
+
+  const handleTouchEnd = () => {
+    if (!isDragging) return;
+    setIsDragging(false);
+    
+    const elapsed = Date.now() - touchStartRef.current.time;
+    const velocity = dragOffset / Math.max(elapsed, 1);
+    
+    // Close if dragged far enough OR fast enough swipe
+    if (dragOffset > 120 || (velocity > 0.5 && dragOffset > 40)) {
+      animateClose();
+    } else {
+      // Snap back
+      setDragOffset(0);
+    }
   };
 
   // Check if current year range matches a preset
@@ -81,43 +141,37 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
     { code: 'TR', name: 'Туреччина' },
   ];
 
-  const [touchStart, setTouchStart] = useState(null);
-
-  const handleTouchStart = (e) => {
-    setTouchStart(e.touches[0].clientY);
-  };
-
-  const handleTouchMove = (e) => {
-    if (touchStart === null) return;
-    const currentY = e.touches[0].clientY;
-    const diff = currentY - touchStart;
-    if (diff > 40) {
-      onClose();
-      setTouchStart(null);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    setTouchStart(null);
+  const sheetStyle = {
+    transform: isClosing 
+      ? 'translateY(100%)' 
+      : `translateY(${dragOffset}px)`,
+    transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)',
   };
 
   return (
     <div className="absolute inset-0 z-50 flex items-end justify-center">
-      <div className="absolute inset-0 bg-black/60 backdrop-blur-sm" onClick={onClose}></div>
-      <div className="relative w-full bg-[#111] border-t border-white/10 rounded-t-3xl p-6 pb-8 flex flex-col max-h-[85vh] animate-in">
+      <div 
+        className={`absolute inset-0 bg-black/60 backdrop-blur-sm transition-opacity duration-300 ${isClosing ? 'opacity-0' : 'opacity-100'}`} 
+        onClick={animateClose}
+      ></div>
+      <div 
+        ref={sheetRef}
+        style={sheetStyle}
+        className="relative w-full bg-[#111] border-t border-white/10 rounded-t-3xl flex flex-col max-h-[85vh] animate-in"
+      >
         
-        {/* Header + Swipe Handle Area */}
+        {/* Handle bar + Swipe zone */}
         <div 
-          className="shrink-0 pb-2"
+          className="shrink-0 pb-2 pt-3 cursor-grab active:cursor-grabbing"
           onTouchStart={handleTouchStart}
           onTouchMove={handleTouchMove}
           onTouchEnd={handleTouchEnd}
         >
           {/* Handle bar */}
-          <div className="w-10 h-1.5 bg-white/20 rounded-full mx-auto mb-5"></div>
+          <div className="w-10 h-1.5 bg-white/30 rounded-full mx-auto mb-4"></div>
           
           {/* Header text */}
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between px-6 mb-3">
             <h2 className="text-lg font-bold text-white flex items-center gap-2">
               <SlidersHorizontal size={18} /> Фільтри
             </h2>
@@ -127,7 +181,7 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto space-y-6 scrollbar-hide pr-1">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-6 scrollbar-hide pr-1 px-6">
           
           {/* Rating */}
           <div>
@@ -278,9 +332,11 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
           </div>
         </div>
 
-        <button onClick={handleApply} className="mt-4 w-full bg-white text-black font-bold py-4 rounded-xl active:scale-95 transition-transform shrink-0">
-          Застосувати
-        </button>
+        <div className="shrink-0 px-6 pt-3 pb-6">
+          <button onClick={handleApply} className="w-full bg-white text-black font-bold py-4 rounded-xl active:scale-95 transition-transform">
+            Застосувати
+          </button>
+        </div>
       </div>
     </div>
   );
