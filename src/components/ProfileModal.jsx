@@ -1,17 +1,9 @@
 import { useState } from 'react';
-import { X, Users, Smartphone, Copy, CheckCircle2, Send, Heart, Eye, Clapperboard, Timer, Cloud, CloudOff } from 'lucide-react';
+import { X, Users, Smartphone, Copy, CheckCircle2, Send, Heart, Eye, Clapperboard, Timer } from 'lucide-react';
 
 const BOT_USERNAME = 'q_moviebot';
 
-// Fun level based on watched count
-const getLevel = (watched) => {
-  if (watched >= 50) return 'Кіноман 🏆';
-  if (watched >= 20) return 'Сінефіл';
-  if (watched >= 5) return 'Кіноглядач';
-  return 'Новачок';
-};
-
-export default function ProfileModal({ onClose, user, userData, partnerId, partnerProfile, setPartnerId, syncOk }) {
+export default function ProfileModal({ onClose, user, userData, partnerId, partnerProfile, setPartnerId }) {
   const [inputId, setInputId] = useState('');
   const [copied, setCopied] = useState(false);
   const [connectMsg, setConnectMsg] = useState('');
@@ -117,10 +109,6 @@ export default function ProfileModal({ onClose, user, userData, partnerId, partn
                 {getInitials(user?.displayName)}
               </div>
             )}
-            {/* Level badge */}
-            <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 bg-black/60 backdrop-blur-xl px-2.5 py-0.5 rounded-full ring-1 ring-white/15 whitespace-nowrap">
-              <span className="text-[9px] font-bold uppercase tracking-wider text-white/80">{getLevel(watched)}</span>
-            </div>
           </div>
 
           {user ? (
@@ -136,15 +124,6 @@ export default function ProfileModal({ onClose, user, userData, partnerId, partn
               </p>
             </>
           )}
-
-          {/* Sync status */}
-          <div className="mt-2.5 flex items-center gap-1.5">
-            {user && syncOk !== false ? (
-              <><Cloud size={11} className="text-emerald-400/80" /><span className="text-[10px] font-semibold text-emerald-400/80 uppercase tracking-wider">Синхронізовано</span></>
-            ) : (
-              <><CloudOff size={11} className="text-white/35" /><span className="text-[10px] font-semibold text-white/35 uppercase tracking-wider">Локальний режим</span></>
-            )}
-          </div>
         </div>
 
         <div className="relative px-5 pb-7 space-y-3">

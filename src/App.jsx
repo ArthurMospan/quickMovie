@@ -101,7 +101,6 @@ export default function App() {
   });
   const [partnerId, setPartnerId] = useState('');
   const [partnerData, setPartnerData] = useState({ saves: [], watched: [] });
-  const [syncOk, setSyncOk] = useState(null); // null=unknown, true=Firestore works, false=local-only
   const reconciled = useRef(false);
 
   // --- Toast feedback ---
@@ -182,7 +181,6 @@ export default function App() {
     const unsub = subscribeToUser(user.uid, (docSnap) => {
       if (!docSnap.exists()) return;
       const remote = docSnap.data();
-      setSyncOk(true);
 
       // One-time reconcile: push local-only saves (made while offline) to Firestore
       const localSaves = readLS(LS_SAVES);
@@ -381,31 +379,36 @@ export default function App() {
     if (user) {
       try {
         await toggleSaveMovie(user.uid, movieId, isSaved);
-        setSyncOk(true);
       } catch (e) {
         console.error("Save sync error:", e);
-        setSyncOk(false);
       }
     }
   };
 
   // --- Toggle Watched ---
+  // Watch: the movie MOVES from the saved list to "Переглянуті" (not deleted).
+  // Un-watch: it moves back to the saved list.
   const handleToggleWatched = async (movieId) => {
     const isWatched = userData.watched?.includes(movieId);
-    const newWatched = isWatched
-      ? (userData.watched || []).filter(id => id !== movieId)
-      : [...(userData.watched || []), movieId];
-    const newSaves = (userData.saves || []).filter(id => id !== movieId || isWatched);
-    applyLocal({ watched: newWatched, saves: isWatched ? userData.saves : newSaves });
-    showToast(isWatched ? 'Повернуто у список' : 'Позначено як переглянуте ✓');
+    if (isWatched) {
+      applyLocal({
+        watched: (userData.watched || []).filter(id => id !== movieId),
+        saves: [...new Set([...(userData.saves || []), movieId])]
+      });
+      showToast('Повернуто у список ❤');
+    } else {
+      applyLocal({
+        watched: [...(userData.watched || []), movieId],
+        saves: (userData.saves || []).filter(id => id !== movieId)
+      });
+      showToast('Позначено як переглянуте ✓');
+    }
 
     if (user) {
       try {
         await toggleMovieWatched(user.uid, movieId, isWatched);
-        setSyncOk(true);
       } catch (e) {
         console.error("Watched sync error:", e);
-        setSyncOk(false);
       }
     }
   };
@@ -551,6 +554,16 @@ export default function App() {
             {hasFilters ? filterSummary : 'Фільтри'}
           </span>
         </button>
+
+        {/* Landscape-only filters button — left side, under the search button */}
+        <button
+          onClick={() => setShowFilters(true)}
+          className="landscape-filter-btn absolute left-6 z-30 w-10 h-10 rounded-full bg-black/30 backdrop-blur-md border border-white/10 items-center justify-center active:scale-90 transition-transform"
+          style={{ top: 'calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 62px)' }}
+        >
+          <SlidersHorizontal size={16} className="text-white" />
+          {hasFilters && <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-white"></span>}
+        </button>
       </div>
 
       {/* ===== WATCHLIST TAB ===== */}
@@ -564,6 +577,7 @@ export default function App() {
           onToggleWatched={handleToggleWatched}
           watched={userData.watched || []}
           onGoToProfile={() => setShowProfile(true)}
+          notify={showToast}
         />
       )}
 
@@ -597,7 +611,6 @@ export default function App() {
           partnerId={partnerId}
           partnerProfile={partnerData}
           setPartnerId={handleSetPartnerId}
-          syncOk={syncOk}
         />
       )}
     </div>

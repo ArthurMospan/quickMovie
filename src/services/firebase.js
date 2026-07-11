@@ -132,6 +132,7 @@ export const toggleMovieWatched = async (uid, movieId, isWatched) => {
   const userDocRef = doc(db, 'users', uid);
   await updateDoc(userDocRef, {
     watched: isWatched ? arrayRemove(movieId) : arrayUnion(movieId),
-    saves: arrayRemove(movieId) // Remove from saves when toggling watched
+    // Watch → movie leaves the saved list; un-watch → returns to the saved list
+    saves: isWatched ? arrayUnion(movieId) : arrayRemove(movieId)
   });
 };

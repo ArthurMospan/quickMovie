@@ -122,6 +122,18 @@ html, body {
 /* --- YouTube crop stage ---
    16:9 box with overflow hidden; the iframe inside is oversized vertically,
    so YouTube's own UI (title, avatar, watermark, controls) is physically cut off. */
+/* Disable long-press image callout (used for copy-title long-press on cards) */
+.no-callout {
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* Landscape-only filters button (hidden in portrait) */
+.landscape-filter-btn {
+  display: none;
+}
+
 .yt-stage {
   position: relative;
   width: 100%;
@@ -176,5 +188,9 @@ html, body {
   /* Rotate hint is portrait-only */
   .portrait-hint {
     display: none !important;
+  }
+
+  .landscape-filter-btn {
+    display: flex !important;
   }
 }

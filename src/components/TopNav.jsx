@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Search, User, Smartphone } from 'lucide-react';
 
 function TabButton({ children, active, onClick }) {
@@ -14,12 +14,30 @@ function TabButton({ children, active, onClick }) {
 
 export default function TopNav({ activeTab, setActiveTab, onProfileClick, userPhotoURL }) {
   const [avatarError, setAvatarError] = useState(false);
+  const [hintFaded, setHintFaded] = useState(false);
+
+  // Purely informative hint — fades out by itself
+  useEffect(() => {
+    const t = setTimeout(() => setHintFaded(true), 7000);
+    return () => clearTimeout(t);
+  }, []);
 
   return (
     <div
       className="app-topnav absolute top-0 left-0 right-0 z-40 flex justify-between items-center px-6 pb-4 bg-gradient-to-b from-black/90 via-black/50 to-transparent pointer-events-none"
       style={{ paddingTop: 'calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 64px)' }}
     >
+
+      {/* Rotate hint — at the VERY top, centered between Telegram's own buttons */}
+      {activeTab === 'feed' && (
+        <div
+          className={`portrait-hint absolute left-1/2 -translate-x-1/2 flex items-center gap-1.5 whitespace-nowrap pointer-events-none transition-opacity duration-1000 ${hintFaded ? 'opacity-0' : 'opacity-100'}`}
+          style={{ top: 'calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 16px)' }}
+        >
+          <Smartphone size={11} className="tilt-anim text-white/45" />
+          <span className="text-[10px] font-medium text-white/45">Розверніть для зручності</span>
+        </div>
+      )}
 
       {/* Left: AI Search Button (plain magnifier) */}
       <button
@@ -33,17 +51,10 @@ export default function TopNav({ activeTab, setActiveTab, onProfileClick, userPh
         <Search size={18} className="text-white" />
       </button>
 
-      {/* Center: Tabs + unobtrusive rotate hint below the white line */}
+      {/* Center: Tabs */}
       <div className="relative flex gap-5 items-center pointer-events-auto">
         <TabButton active={activeTab === 'feed'} onClick={() => setActiveTab('feed')}>Огляд</TabButton>
         <TabButton active={activeTab === 'watchlist'} onClick={() => setActiveTab('watchlist')}>Watchlist</TabButton>
-
-        {activeTab === 'feed' && (
-          <div className="portrait-hint absolute top-full left-1/2 -translate-x-1/2 mt-1.5 flex items-center gap-1.5 whitespace-nowrap pointer-events-none">
-            <Smartphone size={10} className="tilt-anim text-white/40" />
-            <span className="text-[10px] font-medium text-white/40">Розверніть для зручності</span>
-          </div>
-        )}
       </div>
 
       {/* Right: Profile Avatar */}
