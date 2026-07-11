@@ -47,7 +47,7 @@ export default function WishlistView({ mySaves, partnerSaves, partnerId, onToggl
   const displayItems = tab === 'mine' ? myItems : matchItems;
 
   return (
-    <div className="absolute inset-0 z-10 bg-[#0a0a0a] flex flex-col" style={{ paddingTop: 'calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 100px)' }}>
+    <div className="absolute inset-0 z-10 bg-[#0a0a0a] flex flex-col" style={{ paddingTop: 'var(--app-top)' }}>
       
       {/* Sticky Tabs */}
       <div className="shrink-0 px-4 pb-4">

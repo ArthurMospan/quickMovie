@@ -102,25 +102,64 @@ html, body {
   overflow: hidden;
 }
 
-/* --- Landscape Mode Styles --- */
-@media (orientation: landscape) and (max-height: 500px) {
-  /* Hide UI elements in landscape to prioritize video */
+/* --- Layout offsets ---
+   --app-top = bottom edge of the TopNav (safe area + nav height).
+   Used by Watchlist / AI tabs / filter pill so nothing hides under the header. */
+:root {
+  --app-top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 132px);
+}
+
+/* --- YouTube crop stage ---
+   16:9 box with overflow hidden; the iframe inside is oversized vertically,
+   so YouTube's own UI (title, avatar, watermark, controls) is physically cut off. */
+.yt-stage {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  background: #000;
+  box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
+}
+
+/* --- Landscape Mode ---
+   Header buttons stay on top (compact), action buttons move to a bottom row,
+   the video fills the screen height. */
+@media (orientation: landscape) and (max-height: 600px) {
+  :root {
+    --app-top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 64px);
+  }
+
+  /* Compact header, centered content still fits in one row */
+  .app-topnav {
+    padding-top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 10px) !important;
+    padding-bottom: 8px !important;
+  }
+
+  /* Video: full height, 16:9, centered */
+  .yt-stage {
+    width: auto;
+    height: 100dvh;
+    max-width: 100vw;
+  }
+
+  /* Right action column → horizontal row at the bottom center */
   .landscape-actions {
-    opacity: 0 !important;
-    pointer-events: none !important;
+    flex-direction: row !important;
+    align-items: flex-end !important;
+    gap: 26px !important;
+    right: auto !important;
+    left: 50% !important;
+    bottom: 10px !important;
+    transform: translateX(-50%);
   }
+
+  /* Title/overview and dark gradient are hidden — clean fullscreen video */
   .landscape-info {
-    opacity: 0 !important;
-    pointer-events: none !important;
+    display: none !important;
   }
-  /* TopNav could also be hidden if we wanted, but keeping it small is okay.
-     Usually we want full screen video. */
-  
-  /* Make the iframe fill more space */
-  .aspect-video {
-    width: 100vw !important;
-    height: 100vh !important;
-    max-width: none !important;
-    object-fit: contain;
+
+  /* Filter pill hidden in landscape */
+  .filter-pill {
+    display: none !important;
   }
 }

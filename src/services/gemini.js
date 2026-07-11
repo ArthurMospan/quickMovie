@@ -1,7 +1,18 @@
+// --- Shared prompt (same as api/search.js) ---
+const buildPrompt = (description) => `Ти — кіноексперт. Користувач описує фільм або серіал своїми словами: "${description}"
+
+Визнач, що це за фільм/серіал, і відповідай СУВОРО у такому форматі (3 рядки):
+<1-2 коротких дружніх речення українською: що це за фільм і чому підходить під опис>
+TITLE: <оригінальна назва англійською>
+YEAR: <рік виходу>
+TYPE: <movie або tv>
+
+Якщо взагалі не можеш розпізнати — відповідай одним словом: UNKNOWN`;
+
 // --- Try backend serverless function first ---
 const callBackendProxy = async (description) => {
     console.log('[AI Search] Trying backend /api/search...');
-    
+
     const response = await fetch('/api/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -19,58 +30,53 @@ const callBackendProxy = async (description) => {
 
 // --- Direct Gemini call (fallback for local dev or if backend is down) ---
 const callGeminiDirect = async (description) => {
-    const apiKey = localStorage.getItem('GEMINI_API_KEY') 
-        || import.meta.env.VITE_GEMINI_API_KEY 
+    const apiKey = localStorage.getItem('GEMINI_API_KEY')
+        || import.meta.env.VITE_GEMINI_API_KEY
         || null;
-    
+
     if (!apiKey) {
-        throw new Error("AI-пошук тимчасово недоступний. Спробуйте через хвилину.");
+        throw new Error("ШІ-пошук тимчасово недоступний. Спробуйте через хвилину.");
     }
 
     console.log('[AI Search] Trying direct Gemini call...');
 
-    // Try latest model
-    const models = ['gemini-2.5-flash'];
-    
+    const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+    const prompt = buildPrompt(description);
+
     for (const model of models) {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-        const prompt = `Ти - експерт з кіно. Користувач описує фільм: "${description}". 
-            Напиши ЛИШЕ назву українською та в дужках (Original Title, Year). 
-            Наприклад: Матриця (The Matrix, 1999). Якщо не впізнав: "Не вдалося розпізнати фільм".`;
+        // Gemini 2.5: disable thinking, otherwise it eats maxOutputTokens and returns empty text
+        const generationConfig = { temperature: 0.3, maxOutputTokens: 512 };
+        if (model.startsWith('gemini-2.5')) {
+            generationConfig.thinkingConfig = { thinkingBudget: 0 };
+        }
 
         try {
-            await new Promise(r => setTimeout(r, 300));
-
             const response = await fetch(url, {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                    'x-goog-api-client': 'genai-js/0.1.0'
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.2, maxOutputTokens: 60 }
+                    generationConfig
                 })
             });
 
-            if (response.status === 429) {
-                console.warn(`[AI Search] ${model} returned 429, trying next...`);
+            if (!response.ok) {
+                console.warn(`[AI Search] ${model} returned ${response.status}, trying next...`);
                 continue;
             }
 
-            if (!response.ok) continue;
-
             const data = await response.json();
-            const title = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim()?.replace(/['"]/g, '');
-            if (title) return title;
+            const text = data.candidates?.[0]?.content?.parts?.[0]?.text?.trim();
+            if (text) return text;
         } catch (e) {
             console.warn(`[AI Search] ${model} failed:`, e.message);
             continue;
         }
     }
-    
-    throw new Error('AI перевантажений. Спробуйте через 30 секунд.');
+
+    throw new Error('ШІ перевантажений. Спробуйте через 30 секунд.');
 };
 
 // --- Main export ---
@@ -83,9 +89,42 @@ export const guessMovieFromDescription = async (description) => {
     }
 };
 
-// Extract English title for TMDB search
-export const extractEnglishTitle = (geminiResponse) => {
-    const match = geminiResponse.match(/\(([^,)]+)/);
-    if (match) return match[1].trim();
-    return geminiResponse.replace(/\([^)]*\)/g, '').trim();
+// --- Parse the structured AI answer ---
+// Returns { unknown } or { text, title, year, type }
+export const parseAIAnswer = (raw) => {
+    if (!raw) return { unknown: true };
+    const cleaned = raw.trim().replace(/\*\*/g, '');
+
+    if (/^UNKNOWN\b/i.test(cleaned) || /Не вдалося розпізнати/i.test(cleaned)) {
+        return { unknown: true };
+    }
+
+    const title = cleaned.match(/TITLE:\s*(.+)/i)?.[1]?.trim()?.replace(/["«»]/g, '');
+    const yearStr = cleaned.match(/YEAR:\s*(\d{4})/i)?.[1];
+    const typeStr = cleaned.match(/TYPE:\s*(movie|tv|series|серіал)/i)?.[1]?.toLowerCase();
+
+    // Human-readable part = everything except the TITLE/YEAR/TYPE service lines
+    const text = cleaned
+        .split('\n')
+        .filter(line => !/^\s*(TITLE|YEAR|TYPE):/i.test(line))
+        .join('\n')
+        .trim();
+
+    if (title) {
+        return {
+            text: text || null,
+            title,
+            year: yearStr ? parseInt(yearStr) : null,
+            type: typeStr === 'movie' ? 'movie' : (typeStr ? 'tv' : null)
+        };
+    }
+
+    // Legacy format fallback: "Назва (Original Title, 1999)"
+    const m = cleaned.match(/\(([^,()]+?)(?:,\s*(\d{4}))?\)/);
+    if (m) {
+        return { text: cleaned, title: m[1].trim(), year: m[2] ? parseInt(m[2]) : null, type: null };
+    }
+
+    // Last resort: treat the whole answer as a title
+    return { text: null, title: cleaned.split('\n')[0].slice(0, 80), year: null, type: null };
 };

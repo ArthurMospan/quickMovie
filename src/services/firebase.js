@@ -18,24 +18,32 @@ export const auth = getAuth(app);
 
 // --- Telegram User Helpers ---
 
-// Get Telegram user from WebApp SDK
+// Get Telegram user from WebApp SDK.
+// IMPORTANT: Telegram user data must NOT depend on Firebase auth succeeding.
+// Firebase anonymous auth is attempted separately and non-blocking.
 export const getTelegramUser = async () => {
+  const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+
+  // Firebase anonymous auth (needed only for Firestore rules) — never blocks user detection
   try {
-    // Authenticate anonymously to satisfy Firebase rules (request.auth != null)
     await signInAnonymously(auth);
-    
-    const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
-    if (tgUser && tgUser.id) {
-      return {
-        uid: `tg_${tgUser.id}`,
-        tgId: tgUser.id,
-        displayName: [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ') || 'Користувач',
-        username: tgUser.username || null,
-        photoURL: tgUser.photo_url || null
-      };
-    }
   } catch (e) {
-    console.warn('[TG] Could not get Telegram user or auth failed:', e);
+    console.warn('[Firebase] Anonymous auth failed (saves may not work):', e?.message);
+  }
+
+  if (tgUser && tgUser.id) {
+    // Real avatar: photo_url from initData (Bot API 7.2+), fallback to public t.me userpic
+    let photoURL = tgUser.photo_url || null;
+    if (!photoURL && tgUser.username) {
+      photoURL = `https://t.me/i/userpic/320/${tgUser.username}.jpg`;
+    }
+    return {
+      uid: `tg_${tgUser.id}`,
+      tgId: tgUser.id,
+      displayName: [tgUser.first_name, tgUser.last_name].filter(Boolean).join(' ') || 'Користувач',
+      username: tgUser.username || null,
+      photoURL
+    };
   }
   return null;
 };
@@ -43,21 +51,27 @@ export const getTelegramUser = async () => {
 // Ensure user document exists in Firestore
 export const ensureUserDoc = async (uid) => {
   if (!uid) return;
-  const userDocRef = doc(db, 'users', uid);
-  const docSnap = await getDoc(userDocRef);
-  if (!docSnap.exists()) {
-    await setDoc(userDocRef, {
-      saves: [],
-      watched: [],
-      partnerId: ""
-    });
+  try {
+    const userDocRef = doc(db, 'users', uid);
+    const docSnap = await getDoc(userDocRef);
+    if (!docSnap.exists()) {
+      await setDoc(userDocRef, {
+        saves: [],
+        watched: [],
+        partnerId: ""
+      });
+    }
+  } catch (e) {
+    console.warn('[Firebase] ensureUserDoc failed:', e?.message);
   }
 };
 
 // --- User Data Subscription ---
 export const subscribeToUser = (uid, callback) => {
   if (!uid) return () => {};
-  return onSnapshot(doc(db, 'users', uid), callback);
+  return onSnapshot(doc(db, 'users', uid), callback, (err) => {
+    console.error("User subscription error:", err);
+  });
 };
 
 // --- Partner Subscription ---
@@ -72,12 +86,18 @@ export const subscribeToPartner = (partnerId, callback) => {
 export const updateUserPartnerId = async (uid, partnerId) => {
   if (!uid) return;
   const userDocRef = doc(db, 'users', uid);
-  await updateDoc(userDocRef, { partnerId });
+  try {
+    await updateDoc(userDocRef, { partnerId });
+  } catch (e) {
+    // Doc might not exist yet
+    await setDoc(userDocRef, { saves: [], watched: [], partnerId }, { merge: true });
+  }
 };
 
 // --- Toggle Save ---
 export const toggleSaveMovie = async (uid, movieId, isSaved) => {
   if (!uid) return;
+  await ensureUserDoc(uid);
   const userDocRef = doc(db, 'users', uid);
   await updateDoc(userDocRef, {
     saves: isSaved ? arrayRemove(movieId) : arrayUnion(movieId)
@@ -96,6 +116,7 @@ export const markMovieWatched = async (uid, movieId) => {
 // --- Toggle Watched ---
 export const toggleMovieWatched = async (uid, movieId, isWatched) => {
   if (!uid) return;
+  await ensureUserDoc(uid);
   const userDocRef = doc(db, 'users', uid);
   await updateDoc(userDocRef, {
     watched: isWatched ? arrayRemove(movieId) : arrayUnion(movieId),

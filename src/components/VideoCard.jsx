@@ -1,6 +1,11 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { Heart, Share2, Star, CheckCircle2, VolumeX, Volume2, Bell, Play, Pause, RotateCcw } from 'lucide-react';
 
+// How many px of the YouTube player we crop from top & bottom.
+// YouTube UI (title bar, avatar, "watch on youtube", watermark, controls)
+// physically lives in these zones — cropping removes it for real.
+const YT_CROP = 60;
+
 function ActionBtn({ icon, label, onClick }) {
   return (
     <button onClick={onClick} className="flex flex-col items-center gap-1 group active:scale-90 transition-transform">
@@ -30,9 +35,9 @@ function openCalendarReminder(movie) {
   window.open(url, '_blank');
 }
 
-export default function VideoCard({ 
-  movie, active, isSaved, onToggleSave, 
-  isGlobalMuted, setIsGlobalMuted, isFirstVideo 
+export default function VideoCard({
+  movie, active, isSaved, onToggleSave,
+  isGlobalMuted, setIsGlobalMuted, isFirstVideo
 }) {
   const iframeRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -42,16 +47,16 @@ export default function VideoCard({
   const speeds = [1, 1.2, 1.5, 2];
   const upcoming = useMemo(() => isUpcoming(movie.release_date), [movie.release_date]);
 
-  const thumbnailUrl = movie.trailerKey 
+  const thumbnailUrl = movie.trailerKey
     ? `https://img.youtube.com/vi/${movie.trailerKey}/maxresdefault.jpg`
     : (movie.backdrop_path ? `https://image.tmdb.org/t/p/w1280${movie.backdrop_path}` : null);
 
-  // Show landscape hint once
+  // Show landscape hint once per install (v2 key so users see it after the update)
   useEffect(() => {
-    if (active && isFirstVideo && !localStorage.getItem('qm_landscape_shown')) {
+    if (active && isFirstVideo && !localStorage.getItem('qm_landscape_v2')) {
       const t = setTimeout(() => {
         setShowLandscapeHint(true);
-        localStorage.setItem('qm_landscape_shown', '1');
+        localStorage.setItem('qm_landscape_v2', '1');
         setTimeout(() => setShowLandscapeHint(false), 5000);
       }, 3000);
       return () => clearTimeout(t);
@@ -63,7 +68,7 @@ export default function VideoCard({
       iframeRef.current?.contentWindow?.postMessage(
         JSON.stringify({ event: 'command', func, args }), '*'
       );
-    } catch (e) {}
+    } catch (e) { /* iframe not ready */ }
   };
 
   // When card becomes active, try autoplay + set state
@@ -72,7 +77,6 @@ export default function VideoCard({
       setIsPlaying(false);
       return;
     }
-    // Try to autoplay after iframe loads
     const t1 = setTimeout(() => { sendCommand('playVideo'); setIsPlaying(true); }, 500);
     const t2 = setTimeout(() => { sendCommand('playVideo'); }, 1200);
     const tMute = setTimeout(() => sendCommand(isGlobalMuted ? 'mute' : 'unMute'), 700);
@@ -111,7 +115,7 @@ export default function VideoCard({
   };
 
   const handleShare = () => {
-    const url = movie.trailerKey 
+    const url = movie.trailerKey
       ? `https://www.youtube.com/watch?v=${movie.trailerKey}`
       : `https://www.themoviedb.org/movie/${movie.id}`;
     if (navigator.share) {
@@ -147,7 +151,7 @@ export default function VideoCard({
 
   return (
     <div className="relative w-full h-[100dvh] snap-start bg-black flex items-center justify-center overflow-hidden">
-      
+
       {/* 1. Ambient Background */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
         {thumbnailUrl && (
@@ -156,45 +160,50 @@ export default function VideoCard({
         <div className="absolute inset-0 bg-black/40"></div>
       </div>
 
-      {/* 2. Video Player with YouTube UI masking */}
+      {/* 2. Video stage: 16:9 box, overflow-hidden. The iframe inside is
+             TALLER than the box by 2*YT_CROP, so YouTube's own UI
+             (top title bar + bottom controls/watermark) is cropped away. */}
       <div className="relative z-10 w-full h-full flex items-center justify-center pointer-events-none">
-        {active ? (
-          <div className="relative w-full" style={{ aspectRatio: '16/9' }}>
-            <iframe
-              ref={iframeRef}
-              className="absolute inset-0 w-full h-full shadow-[0_0_50px_rgba(0,0,0,0.8)]"
-              src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&loop=1&playlist=${movie.trailerKey}&enablejsapi=1&disablekb=1&fs=0&iv_load_policy=3&showinfo=0&cc_load_policy=0&origin=${encodeURIComponent(window.location.origin)}`}
-              frameBorder="0" 
-              allow="autoplay; encrypted-media; picture-in-picture; accelerometer; gyroscope"
-              allowFullScreen
-            ></iframe>
-            {/* YouTube UI masking overlays */}
-            <div className="absolute top-0 left-0 right-0 h-[60px] bg-gradient-to-b from-black via-black/80 to-transparent pointer-events-none z-[5]"></div>
-            <div className="absolute bottom-0 left-0 right-0 h-[50px] bg-gradient-to-t from-black via-black/80 to-transparent pointer-events-none z-[5]"></div>
-            {/* Left/right thin strips to hide side overlays */}
-            <div className="absolute top-0 bottom-0 left-0 w-[6px] bg-black pointer-events-none z-[5]"></div>
-            <div className="absolute top-0 bottom-0 right-0 w-[6px] bg-black pointer-events-none z-[5]"></div>
-          </div>
-        ) : (
-          thumbnailUrl && (
-            <img src={thumbnailUrl} alt="" className="w-full aspect-video object-cover shadow-[0_0_50px_rgba(0,0,0,0.8)]" loading="lazy" />
-          )
-        )}
+        <div className="yt-stage">
+          {active ? (
+            <>
+              <iframe
+                ref={iframeRef}
+                className="absolute left-0 w-full"
+                style={{ top: `-${YT_CROP}px`, height: `calc(100% + ${YT_CROP * 2}px)` }}
+                src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&loop=1&playlist=${movie.trailerKey}&enablejsapi=1&disablekb=1&fs=0&iv_load_policy=3&cc_load_policy=0&origin=${encodeURIComponent(window.location.origin)}`}
+                frameBorder="0"
+                allow="autoplay; encrypted-media; picture-in-picture; accelerometer; gyroscope"
+                title={movie.title}
+              ></iframe>
+              {/* Extra safety masks while PAUSED (YouTube shows "More videos" shelf on pause) */}
+              {!isPlaying && (
+                <>
+                  <div className="absolute top-0 left-0 right-0 h-16 bg-gradient-to-b from-black to-transparent z-[6]"></div>
+                  <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-black to-transparent z-[6]"></div>
+                </>
+              )}
+            </>
+          ) : (
+            thumbnailUrl && (
+              <img src={thumbnailUrl} alt="" className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+            )
+          )}
+        </div>
       </div>
 
       {/* 3. Bottom Gradient */}
-      <div className="absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/90 pointer-events-none z-20"></div>
+      <div className="landscape-info absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/90 pointer-events-none z-20"></div>
 
-      {/* 4. PLAY/PAUSE tap zone — covers the center of the video */}
+      {/* 4. PLAY/PAUSE tap zone — covers the whole card (iframe never gets taps) */}
       {active && (
         <button
           onClick={handlePlayPause}
-          className="absolute inset-0 z-25 pointer-events-auto"
+          className="absolute inset-0 pointer-events-auto"
           style={{ zIndex: 25 }}
         >
-          {/* Show play icon when paused */}
           {!isPlaying && (
-            <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+            <div className="absolute inset-0 flex items-center justify-center bg-black/30">
               <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur-xl flex items-center justify-center border border-white/30 animate-pulse">
                 <Play size={40} className="text-white ml-1" fill="white" />
               </div>
@@ -225,49 +234,48 @@ export default function VideoCard({
           <div className="bg-black/70 backdrop-blur-xl border border-white/20 rounded-2xl px-6 py-4 flex items-center gap-3 shadow-2xl">
             <RotateCcw size={24} className="text-white/80 animate-spin" style={{ animationDuration: '3s' }} />
             <div>
-              <p className="text-white font-bold text-sm">Розверніть телефон</p>
-              <p className="text-white/50 text-[11px]">Для повноекранного перегляду</p>
+              <p className="text-white font-bold text-sm">Розверніть телефон 📱</p>
+              <p className="text-white/50 text-[11px]">Трейлер розгорнеться на весь екран</p>
             </div>
           </div>
         </div>
       )}
 
-      {/* Right Actions */}
-      <div className={`absolute right-3 flex flex-col items-center gap-4 z-30 pointer-events-auto transition-opacity duration-300 landscape-actions ${active ? 'opacity-100' : 'opacity-0'}`} style={{ bottom: '5rem' }}>
-        <ActionBtn 
-          icon={<Heart size={24} className={isSaved ? 'fill-white text-white' : 'text-white'} />} 
-          label={isSaved ? "У watchlist" : "Зберегти"} 
-          onClick={onToggleSave} 
+      {/* Right Actions (portrait: right column; landscape: bottom row via CSS) */}
+      <div className={`landscape-actions absolute right-3 bottom-20 flex flex-col items-center gap-4 z-30 pointer-events-auto transition-opacity duration-300 ${active ? 'opacity-100' : 'opacity-0'}`}>
+        <ActionBtn
+          icon={<Heart size={24} className={isSaved ? 'fill-white text-white' : 'text-white'} />}
+          label={isSaved ? "У watchlist" : "Зберегти"}
+          onClick={onToggleSave}
         />
-        
+
         {upcoming ? (
           <ActionBtn icon={<Bell size={22} className="text-white" />} label="Нагадати" onClick={() => openCalendarReminder(movie)} />
         ) : (
           <ActionBtn icon={<div className="font-bold text-white text-sm">x{speedState}</div>} label="Швидкість" onClick={handleSpeedChange} />
         )}
 
-        <ActionBtn 
-          icon={copied ? <CheckCircle2 size={22} className="text-white" /> : <Share2 size={22} className="text-white" />} 
-          label={copied ? "Скопійовано" : "Поділитись"} 
-          onClick={handleShare} 
+        <ActionBtn
+          icon={copied ? <CheckCircle2 size={22} className="text-white" /> : <Share2 size={22} className="text-white" />}
+          label={copied ? "Скопійовано" : "Поділитись"}
+          onClick={handleShare}
         />
 
-        {/* Play/Pause button */}
-        <ActionBtn 
-          icon={isPlaying ? <Pause size={20} className="text-white" /> : <Play size={20} className="text-white" fill="white" />} 
-          label={isPlaying ? "Пауза" : "Грати"} 
-          onClick={handlePlayPause} 
+        <ActionBtn
+          icon={isPlaying ? <Pause size={20} className="text-white" /> : <Play size={20} className="text-white" fill="white" />}
+          label={isPlaying ? "Пауза" : "Грати"}
+          onClick={handlePlayPause}
         />
 
-        <ActionBtn 
-          icon={isGlobalMuted ? <VolumeX size={20} className="text-white/60" /> : <Volume2 size={20} className="text-white" />} 
-          label={isGlobalMuted ? "Увімкнути" : "Вимкнути"} 
-          onClick={handleToggleMute} 
+        <ActionBtn
+          icon={isGlobalMuted ? <VolumeX size={20} className="text-white/60" /> : <Volume2 size={20} className="text-white" />}
+          label={isGlobalMuted ? "Увімкнути" : "Вимкнути"}
+          onClick={handleToggleMute}
         />
       </div>
 
       {/* Bottom Info */}
-      <div className={`absolute bottom-4 left-4 right-20 z-30 flex flex-col gap-1.5 pointer-events-none text-white drop-shadow-lg transition-opacity duration-300 landscape-info ${active ? 'opacity-100' : 'opacity-0'}`}>
+      <div className={`landscape-info absolute bottom-4 left-4 right-20 z-30 flex flex-col gap-1.5 pointer-events-none text-white drop-shadow-lg transition-opacity duration-300 ${active ? 'opacity-100' : 'opacity-0'}`}>
         {upcoming && (
           <span className="bg-white text-black px-2 py-0.5 rounded text-[10px] font-bold self-start mb-0.5">
             Вихід: {formatDateUA(movie.release_date)}
@@ -277,7 +285,7 @@ export default function VideoCard({
         <p className="text-sm text-white/90 line-clamp-3 font-medium drop-shadow-md">{movie.overview}</p>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs font-semibold text-white/90">
           <span className="flex items-center gap-1">
-            <Star size={12} className="text-white fill-white" /> 
+            <Star size={12} className="text-white fill-white" />
             {(movie.vote_average || 0).toFixed(1)}
           </span>
           <span>•</span>

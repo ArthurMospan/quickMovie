@@ -52,7 +52,8 @@ function getFilterSummary(filters, genreMap) {
     }
   }
   const text = parts.join(' · ');
-  return text.length > 42 ? text.slice(0, 40) + '…' : text;
+  // Hard character limit so the pill always fits on screen
+  return text.length > 36 ? text.slice(0, 34).trimEnd() + '…' : text;
 }
 
 export default function App() {
@@ -60,7 +61,11 @@ export default function App() {
   const [activeTab, setActiveTab] = useState('feed');
 
   // --- Welcome Screen ---
-  const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('qm_welcomed'));
+  // Inside Telegram the bot already shows a native splash with a start button,
+  // so we skip the in-app welcome there and go straight to the feed.
+  const [showWelcome, setShowWelcome] = useState(() =>
+    !localStorage.getItem('qm_welcomed') && !window.Telegram?.WebApp?.initDataUnsafe?.user
+  );
 
   // --- Feed State ---
   const [movies, setMovies] = useState([]);
@@ -122,7 +127,7 @@ export default function App() {
           const newPartnerId = `tg_${startParam}`;
           setPartnerId(newPartnerId);
           localStorage.setItem('qw_partner_id', newPartnerId);
-          await import('./services/firebase').then(m => m.updateUserPartnerId(tgUser.uid, newPartnerId));
+          await updateUserPartnerId(tgUser.uid, newPartnerId);
         }
       } else {
         // Look for a locally generated dev ID if not in TG? 
@@ -464,14 +469,16 @@ export default function App() {
           </div>
         )}
 
-        {/* Filter Button (floating, with description) */}
-        <button 
+        {/* Filter Button (floating, shows a short summary of active filters) */}
+        <button
           onClick={() => setShowFilters(true)}
-          className="absolute left-1/2 -translate-x-1/2 z-30 bg-black/30 backdrop-blur-md border border-white/10 px-3.5 py-2 rounded-full flex items-center gap-2 active:scale-95 transition-transform hover:bg-black/50 max-w-[90vw]"
-          style={{ top: 'calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 120px)' }}
+          className={`filter-pill absolute left-1/2 -translate-x-1/2 z-30 backdrop-blur-md border px-3.5 py-2 rounded-full flex items-center gap-2 active:scale-95 transition-transform max-w-[85vw] ${
+            hasFilters ? 'bg-white/15 border-white/25' : 'bg-black/30 border-white/10 hover:bg-black/50'
+          }`}
+          style={{ top: 'var(--app-top)' }}
         >
-          <SlidersHorizontal size={12} className="text-white/70 shrink-0" />
-          <span className="text-[10px] font-bold text-white/70 tracking-wide uppercase truncate">
+          <SlidersHorizontal size={12} className={`shrink-0 ${hasFilters ? 'text-white' : 'text-white/70'}`} />
+          <span className={`text-[10px] font-bold tracking-wide uppercase truncate ${hasFilters ? 'text-white' : 'text-white/70'}`}>
             {hasFilters ? filterSummary : 'Фільтри'}
           </span>
         </button>

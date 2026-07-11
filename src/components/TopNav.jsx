@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Search, Sparkles, User } from 'lucide-react';
 
 function TabButton({ children, active, onClick }) {
@@ -12,18 +13,20 @@ function TabButton({ children, active, onClick }) {
 }
 
 export default function TopNav({ activeTab, setActiveTab, onProfileClick, userPhotoURL }) {
+  const [avatarError, setAvatarError] = useState(false);
+
   return (
-    <div 
-      className="absolute top-0 left-0 right-0 z-40 flex justify-between items-center px-6 pb-4 bg-gradient-to-b from-black/90 via-black/50 to-transparent pointer-events-none"
+    <div
+      className="app-topnav absolute top-0 left-0 right-0 z-40 flex justify-between items-center px-6 pb-4 bg-gradient-to-b from-black/90 via-black/50 to-transparent pointer-events-none"
       style={{ paddingTop: 'calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 64px)' }}
     >
-      
+
       {/* Left: AI Magic Search Button */}
-      <button 
-        onClick={() => setActiveTab('ai')} 
+      <button
+        onClick={() => setActiveTab('ai')}
         className={`pointer-events-auto relative flex items-center justify-center w-10 h-10 rounded-full transition-all duration-300 group backdrop-blur-md border shadow-lg active:scale-90 ${
-          activeTab === 'ai' 
-            ? 'bg-zinc-500/30 border-zinc-500/50' 
+          activeTab === 'ai'
+            ? 'bg-zinc-500/30 border-zinc-500/50'
             : 'bg-white/10 border-white/10 hover:bg-white/20'
         }`}
       >
@@ -38,12 +41,18 @@ export default function TopNav({ activeTab, setActiveTab, onProfileClick, userPh
       </div>
 
       {/* Right: Profile Avatar */}
-      <button 
-        onClick={onProfileClick} 
+      <button
+        onClick={onProfileClick}
         className="pointer-events-auto rounded-full w-10 h-10 bg-gradient-to-tr from-zinc-800 to-zinc-950 border border-white/20 hover:scale-105 active:scale-95 transition-all flex items-center justify-center overflow-hidden shadow-lg"
       >
-        {userPhotoURL ? (
-          <img src={userPhotoURL} alt="Avatar" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+        {userPhotoURL && !avatarError ? (
+          <img
+            src={userPhotoURL}
+            alt="Avatar"
+            referrerPolicy="no-referrer"
+            onError={() => setAvatarError(true)}
+            className="w-full h-full object-cover"
+          />
         ) : (
           <User size={18} className="text-white drop-shadow-md" />
         )}

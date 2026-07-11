@@ -27,11 +27,97 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
   const [dragOffset, setDragOffset] = useState(0);
   const [isDragging, setIsDragging] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
-  const touchStartRef = useRef({ y: 0, time: 0 });
   const scrollRef = useRef(null);
+  const dragRef = useRef({ startY: 0, startTime: 0, offset: 0, dragging: false, eligible: false });
+
+  // Keep latest onClose accessible inside native listeners
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
 
   useEffect(() => {
     getGenreList().then(setGenres).catch(console.error);
+  }, []);
+
+  // --- Swipe-to-close on the WHOLE sheet ---
+  // Native listeners with { passive: false }: React's synthetic touch events are
+  // passive, so preventDefault() (needed to stop inner scroll while dragging) doesn't work there.
+  useEffect(() => {
+    const el = sheetRef.current;
+    if (!el) return;
+
+    const onTouchStart = (e) => {
+      const d = dragRef.current;
+      d.startY = e.touches[0].clientY;
+      d.startTime = Date.now();
+      d.offset = 0;
+      d.dragging = false;
+      // Drag is possible only when the inner list is scrolled to the top
+      d.eligible = !scrollRef.current || scrollRef.current.scrollTop <= 0;
+    };
+
+    const onTouchMove = (e) => {
+      const d = dragRef.current;
+      const diff = e.touches[0].clientY - d.startY;
+
+      // Re-arm mid-gesture: user scrolled the list back to top and keeps pulling down
+      if (!d.eligible && scrollRef.current && scrollRef.current.scrollTop <= 0 && diff > 0) {
+        d.eligible = true;
+        d.startY = e.touches[0].clientY;
+        return;
+      }
+      if (!d.eligible) return;
+
+      if (!d.dragging) {
+        if (diff > 8) {
+          d.dragging = true;
+          setIsDragging(true);
+        } else if (diff < -8) {
+          // Finger moves up → it's a scroll, not a dismiss
+          d.eligible = false;
+          return;
+        } else {
+          return;
+        }
+      }
+
+      // While dragging the sheet, stop the inner list from scrolling
+      if (e.cancelable) e.preventDefault();
+
+      const clamped = Math.max(0, diff);
+      const resistance = clamped > 100 ? 0.4 : 0.8;
+      d.offset = clamped * resistance;
+      setDragOffset(d.offset);
+    };
+
+    const onTouchEnd = () => {
+      const d = dragRef.current;
+      if (!d.dragging) return;
+      d.dragging = false;
+      setIsDragging(false);
+
+      const elapsed = Date.now() - d.startTime;
+      const velocity = d.offset / Math.max(elapsed, 1);
+
+      // Close if dragged far enough OR flicked fast enough
+      if (d.offset > 110 || (velocity > 0.5 && d.offset > 40)) {
+        setIsClosing(true);
+        setTimeout(() => onCloseRef.current(), 300);
+      } else {
+        d.offset = 0;
+        setDragOffset(0);
+      }
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', onTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('touchcancel', onTouchEnd);
+    };
   }, []);
 
   // Debounced person search
@@ -68,52 +154,6 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
   const animateClose = () => {
     setIsClosing(true);
     setTimeout(() => onClose(), 300);
-  };
-
-  // --- Drag to dismiss handlers ---
-  const handleTouchStart = (e) => {
-    // Only initiate drag if scrollable content is at top
-    const scrollEl = scrollRef.current;
-    if (scrollEl && scrollEl.scrollTop > 0) return;
-    
-    touchStartRef.current = { 
-      y: e.touches[0].clientY, 
-      time: Date.now() 
-    };
-    setIsDragging(true);
-  };
-
-  const handleTouchMove = (e) => {
-    if (!isDragging) return;
-    
-    const currentY = e.touches[0].clientY;
-    const diff = currentY - touchStartRef.current.y;
-    
-    // Only allow dragging downward
-    if (diff < 0) {
-      setDragOffset(0);
-      return;
-    }
-    
-    // Apply resistance — the further you drag, the harder it gets
-    const resistance = diff > 100 ? 0.4 : 0.8;
-    setDragOffset(diff * resistance);
-  };
-
-  const handleTouchEnd = () => {
-    if (!isDragging) return;
-    setIsDragging(false);
-    
-    const elapsed = Date.now() - touchStartRef.current.time;
-    const velocity = dragOffset / Math.max(elapsed, 1);
-    
-    // Close if dragged far enough OR fast enough swipe
-    if (dragOffset > 120 || (velocity > 0.5 && dragOffset > 40)) {
-      animateClose();
-    } else {
-      // Snap back
-      setDragOffset(0);
-    }
   };
 
   // Check if current year range matches a preset
@@ -160,13 +200,8 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
         className="relative w-full bg-[#111] border-t border-white/10 rounded-t-3xl flex flex-col max-h-[85vh] animate-in"
       >
         
-        {/* Handle bar + Swipe zone */}
-        <div 
-          className="shrink-0 pb-2 pt-3 cursor-grab active:cursor-grabbing"
-          onTouchStart={handleTouchStart}
-          onTouchMove={handleTouchMove}
-          onTouchEnd={handleTouchEnd}
-        >
+        {/* Handle bar */}
+        <div className="shrink-0 pb-2 pt-3 cursor-grab active:cursor-grabbing">
           {/* Handle bar */}
           <div className="w-10 h-1.5 bg-white/30 rounded-full mx-auto mb-4"></div>
           
