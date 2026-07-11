@@ -35,12 +35,13 @@ export default async function handler(req, res) {
     }
 
     const msg = update.message;
-    // Reply only in private chats; any text (including /start) gets the splash
+    // Reply only in private chats; any text (including /start) gets the splash.
+    // Caption & photo can be overridden via Vercel env vars BOT_CAPTION / BOT_PHOTO_URL.
     if (msg?.chat?.id && msg.chat.type === 'private') {
       await tgCall(token, 'sendPhoto', {
         chat_id: msg.chat.id,
-        photo: `${appUrl}/logo.png`,
-        caption: '🎬 <b>QuickMovie</b>\n\nСвайпай трейлери як TikTok, зберігай фільми у вішліст і дивись разом з друзями.',
+        photo: process.env.BOT_PHOTO_URL || `${appUrl}/logo.png`,
+        caption: process.env.BOT_CAPTION || '🎬 <b>QuickMovie</b>\n\nСвайпай трейлери як TikTok, зберігай фільми у вотчліст і дивись разом з друзями.',
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [[

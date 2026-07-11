@@ -169,7 +169,7 @@ export default function App() {
           try {
             await updateUserPartnerId(tgUser.uid, newPartnerId);      // me -> partner
             await updateUserPartnerId(newPartnerId, tgUser.uid);      // partner -> me (accept invite both ways)
-            showToast('Вішлісти з\'єднано ✓');
+            showToast('Вотчлісти з\'єднано ✓');
           } catch (e) {
             console.warn('Partner link failed:', e?.message);
           }
@@ -384,7 +384,7 @@ export default function App() {
       ? (userData.saves || []).filter(id => id !== movieId)
       : [...(userData.saves || []), movieId];
     applyLocal({ saves: newSaves });
-    showToast(isSaved ? 'Прибрано з вішліста' : 'Додано у вішліст ❤');
+    showToast(isSaved ? 'Прибрано' : 'Додано ❤');
 
     if (user) {
       try {
@@ -498,7 +498,7 @@ export default function App() {
             {[
               { emoji: '🎬', text: 'Трейлери фільмів та серіалів' },
               { emoji: '🤖', text: 'ШІ знайде фільм за описом' },
-              { emoji: '❤️', text: 'Спільний вішліст з друзями' },
+              { emoji: '⭐', text: 'Спільний вотчліст з друзями' },
             ].map((item, i) => (
               <div key={i} className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
                 <span className="text-lg">{item.emoji}</span>

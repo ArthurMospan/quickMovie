@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { X, Users, Smartphone, Send, Heart, Eye, Clapperboard, Timer, ChevronRight } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { X, Users, Smartphone, Send, Heart, Eye, Timer, ChevronRight } from 'lucide-react';
 
 const BOT_USERNAME = 'q_moviebot';
 
@@ -7,6 +7,102 @@ export default function ProfileModal({ onClose, user, userData, partnerId, partn
   const [avatarError, setAvatarError] = useState(false);
   const [partnerAvatarError, setPartnerAvatarError] = useState(false);
   const [msg, setMsg] = useState('');
+
+  // --- Bottom-sheet drag-to-close (same behaviour as the filters sheet) ---
+  const sheetRef = useRef(null);
+  const handleRef = useRef(null);
+  const [dragOffset, setDragOffset] = useState(0);
+  const [isDragging, setIsDragging] = useState(false);
+  const [isClosing, setIsClosing] = useState(false);
+  const dragRef = useRef({ startY: 0, startTime: 0, offset: 0, dragging: false, eligible: false });
+  const onCloseRef = useRef(onClose);
+  useEffect(() => { onCloseRef.current = onClose; }, [onClose]);
+
+  const animateClose = () => {
+    setIsClosing(true);
+    setTimeout(() => onCloseRef.current(), 300);
+  };
+
+  useEffect(() => {
+    const el = sheetRef.current;
+    if (!el) return;
+
+    const onTouchStart = (e) => {
+      const d = dragRef.current;
+      d.startY = e.touches[0].clientY;
+      d.startTime = Date.now();
+      d.offset = 0;
+      d.dragging = false;
+      const inHandle = handleRef.current && handleRef.current.contains(e.target);
+      d.eligible = inHandle || el.scrollTop <= 0;
+    };
+
+    const onTouchMove = (e) => {
+      const d = dragRef.current;
+      const diff = e.touches[0].clientY - d.startY;
+
+      if (!d.eligible && el.scrollTop <= 0 && diff > 0) {
+        d.eligible = true;
+        d.startY = e.touches[0].clientY;
+        return;
+      }
+      if (!d.eligible) return;
+
+      if (!d.dragging) {
+        if (diff > 6) {
+          d.dragging = true;
+          setIsDragging(true);
+        } else if (diff < -6) {
+          d.eligible = false;
+          return;
+        } else {
+          return;
+        }
+      }
+
+      if (e.cancelable) e.preventDefault();
+
+      const clamped = Math.max(0, diff);
+      const resistance = clamped > 100 ? 0.4 : 0.85;
+      d.offset = clamped * resistance;
+      setDragOffset(d.offset);
+    };
+
+    const onTouchEnd = () => {
+      const d = dragRef.current;
+      if (!d.dragging) return;
+      d.dragging = false;
+      setIsDragging(false);
+
+      const elapsed = Date.now() - d.startTime;
+      const velocity = d.offset / Math.max(elapsed, 1);
+
+      if (d.offset > 110 || (velocity > 0.5 && d.offset > 40)) {
+        setIsClosing(true);
+        setTimeout(() => onCloseRef.current(), 300);
+      } else {
+        d.offset = 0;
+        setDragOffset(0);
+      }
+    };
+
+    el.addEventListener('touchstart', onTouchStart, { passive: true });
+    el.addEventListener('touchmove', onTouchMove, { passive: false });
+    el.addEventListener('touchend', onTouchEnd, { passive: true });
+    el.addEventListener('touchcancel', onTouchEnd, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onTouchStart);
+      el.removeEventListener('touchmove', onTouchMove);
+      el.removeEventListener('touchend', onTouchEnd);
+      el.removeEventListener('touchcancel', onTouchEnd);
+    };
+  }, []);
+
+  const sheetStyle = {
+    transform: isClosing ? 'translateY(100%)' : `translateY(${dragOffset}px)`,
+    transition: isDragging ? 'none' : 'transform 0.3s cubic-bezier(0.22, 1, 0.36, 1)',
+    overscrollBehavior: 'contain'
+  };
 
   const insideTG = !!window.Telegram?.WebApp?.initDataUnsafe?.user;
 
@@ -26,7 +122,7 @@ export default function ProfileModal({ onClose, user, userData, partnerId, partn
       flash('Відкрийте додаток через Telegram, щоб запрошувати друзів');
       return;
     }
-    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent('🎬 Давай дивитись фільми разом! Відкрий — і наші вішлісти з\'єднаються:')}`;
+    const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(inviteLink)}&text=${encodeURIComponent('🎬 Давай дивитись разом!')}`;
     try {
       if (window.Telegram?.WebApp?.openTelegramLink) {
         window.Telegram.WebApp.openTelegramLink(shareUrl);
@@ -48,18 +144,27 @@ export default function ProfileModal({ onClose, user, userData, partnerId, partn
   const partnerName = partnerProfile?.name || null;
 
   return (
-    <div className="absolute inset-0 z-50 flex items-end sm:items-center justify-center">
-      <div className="absolute inset-0 bg-black/80 backdrop-blur-sm" onClick={onClose}></div>
+    <div className="absolute inset-0 z-50 flex items-end justify-center">
+      <div className={`absolute inset-0 bg-black/80 backdrop-blur-sm transition-opacity duration-300 ${isClosing ? 'opacity-0' : 'opacity-100'}`} onClick={animateClose}></div>
 
-      <div className="relative w-full sm:max-w-sm max-h-[90vh] overflow-y-auto scrollbar-hide bg-[#0b0b0b]/95 backdrop-blur-2xl rounded-t-3xl sm:rounded-3xl shadow-2xl animate-in overflow-x-hidden">
+      <div
+        ref={sheetRef}
+        style={sheetStyle}
+        className="relative w-full min-h-[72vh] max-h-[92vh] overflow-y-auto scrollbar-hide bg-[#0b0b0b]/95 backdrop-blur-2xl border-t border-white/10 rounded-t-3xl shadow-2xl animate-in overflow-x-hidden"
+      >
 
         {/* Ambient glow — same visual language as the main screen */}
         <div className="pointer-events-none absolute -top-24 left-1/2 -translate-x-1/2 w-[340px] h-[340px] bg-purple-600/25 rounded-full blur-[110px]"></div>
         <div className="pointer-events-none absolute top-40 -left-20 w-[220px] h-[220px] bg-blue-500/15 rounded-full blur-[100px]"></div>
 
+        {/* Handle bar (always-draggable zone) */}
+        <div ref={handleRef} className="sticky top-0 z-10 pt-3 pb-1" style={{ touchAction: 'none' }}>
+          <div className="w-10 h-1.5 bg-white/30 rounded-full mx-auto"></div>
+        </div>
+
         {/* Header */}
-        <div className="relative pt-9 pb-6 px-6 flex flex-col items-center">
-          <button onClick={onClose} className="absolute top-4 right-4 w-8 h-8 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white/60 hover:text-white active:scale-90 transition-all">
+        <div className="relative pt-3 pb-6 px-6 flex flex-col items-center">
+          <button onClick={animateClose} className="absolute top-0 right-4 w-8 h-8 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center text-white/60 hover:text-white active:scale-90 transition-all">
             <X size={16} />
           </button>
 
@@ -120,22 +225,16 @@ export default function ProfileModal({ onClose, user, userData, partnerId, partn
             </button>
           </div>
 
-          {/* Fun mini-metrics */}
-          <div className="flex gap-2.5">
-            <div className="flex-1 bg-white/[0.04] py-2.5 px-3 rounded-2xl flex items-center gap-2.5">
-              <Timer size={14} className="text-white/35 shrink-0" />
-              <div className="text-[11px] text-white/50 leading-tight">≈ <b className="text-white/80">{trailerMinutes} хв</b> у трейлерах</div>
-            </div>
-            <div className="flex-1 bg-white/[0.04] py-2.5 px-3 rounded-2xl flex items-center gap-2.5">
-              <Clapperboard size={14} className="text-white/35 shrink-0" />
-              <div className="text-[11px] text-white/50 leading-tight">Відкрито <b className="text-white/80">{saved + watched}</b> тайтлів</div>
-            </div>
+          {/* Fun mini-metric */}
+          <div className="bg-white/[0.04] py-2.5 px-4 rounded-2xl flex items-center justify-center gap-2.5">
+            <Timer size={14} className="text-white/35 shrink-0" />
+            <div className="text-[11px] text-white/50 leading-tight">≈ <b className="text-white/80">{trailerMinutes} хв</b> переглянуто трейлерів</div>
           </div>
 
-          {/* Shared wishlist — minimal */}
+          {/* Shared watchlist — minimal */}
           <div className="bg-white/[0.07] backdrop-blur-md rounded-2xl p-4">
             <h3 className="text-sm font-bold mb-2 flex items-center gap-1.5 text-white">
-              <Users size={14} className="text-white/60" /> Спільний вішліст
+              <Users size={14} className="text-white/60" /> Спільний вотчліст
             </h3>
 
             {partnerId ? (

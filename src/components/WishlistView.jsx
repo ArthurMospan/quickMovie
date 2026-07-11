@@ -80,7 +80,7 @@ function MovieCard({ movie, variant, isShared, sharedByMe, sharedByPartner, myPh
         </div>
       )}
 
-      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent flex flex-col justify-end p-3">
+      <div className={`absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent flex flex-col justify-end p-3 ${variant === 'mine' ? 'pr-11' : ''}`}>
         <h3 className="font-bold text-[13px] leading-tight text-white mb-0.5 line-clamp-2">
           {movie.title}
           {(movie.original_title || movie.original_name) && (movie.original_title || movie.original_name) !== movie.title && (
@@ -107,13 +107,6 @@ function MovieCard({ movie, variant, isShared, sharedByMe, sharedByPartner, myPh
                 title={isShared ? 'Прибрати зі Спільних' : 'Додати у Спільні'}
               >
                 <Star size={14} className={isShared ? 'fill-current' : ''} />
-              </button>
-              <button
-                onClick={() => onToggleSave(movie.id)}
-                className="p-2 bg-black/50 backdrop-blur-md rounded-full text-white border border-white/10 active:scale-90 transition-transform"
-                title="Прибрати зі списку"
-              >
-                <Trash2 size={14} />
               </button>
               <button
                 onClick={() => onToggleWatched(movie.id)}
@@ -145,6 +138,17 @@ function MovieCard({ movie, variant, isShared, sharedByMe, sharedByPartner, myPh
             </button>
           )}
         </div>
+
+        {/* Delete — bottom-right corner, far from the other actions */}
+        {variant === 'mine' && (
+          <button
+            onClick={() => onToggleSave(movie.id)}
+            className="absolute bottom-2 right-2 p-2 bg-black/50 backdrop-blur-md rounded-full text-white/60 border border-white/10 active:scale-90 transition-transform"
+            title="Прибрати зі списку"
+          >
+            <Trash2 size={13} />
+          </button>
+        )}
       </div>
 
       {variant === 'watched' && (

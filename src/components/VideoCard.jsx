@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Heart, Share2, Star, CheckCircle2, VolumeX, Volume2, Bell, Play, Pause } from 'lucide-react';
+import { Heart, Share, Star, CheckCircle2, VolumeX, Volume2, Bell, Play, Pause } from 'lucide-react';
 
 // How many px of the YouTube player we crop from top & bottom.
 // YouTube UI (title bar, avatar, "watch on youtube", watermark, controls)
@@ -43,6 +43,9 @@ export default function VideoCard({
   const [isPlaying, setIsPlaying] = useState(false);
   const [speedState, setSpeedState] = useState(1);
   const [copied, setCopied] = useState(false);
+  // Warm-up cover: hides YouTube's control flashes (back/pause/forward) that the
+  // mobile player shows for a moment when we fire autoplay/mute JS-API commands.
+  const [warmingUp, setWarmingUp] = useState(true);
   const speeds = [1, 1.2, 1.5, 2];
   const upcoming = useMemo(() => isUpcoming(movie.release_date), [movie.release_date]);
 
@@ -58,16 +61,19 @@ export default function VideoCard({
     } catch (e) { /* iframe not ready */ }
   };
 
-  // When card becomes active, try autoplay + set state
+  // When card becomes active, try autoplay + set state.
+  // Keep JS-API commands to a minimum — each one can make the mobile player
+  // flash its native controls for a moment.
   useEffect(() => {
     if (!active) {
       setIsPlaying(false);
       return;
     }
+    setWarmingUp(true);
     const t1 = setTimeout(() => { sendCommand('playVideo'); setIsPlaying(true); }, 500);
-    const t2 = setTimeout(() => { sendCommand('playVideo'); }, 1200);
-    const tMute = setTimeout(() => sendCommand(isGlobalMuted ? 'mute' : 'unMute'), 700);
-    return () => { clearTimeout(t1); clearTimeout(t2); clearTimeout(tMute); };
+    const tMute = setTimeout(() => sendCommand(isGlobalMuted ? 'mute' : 'unMute'), 750);
+    const tWarm = setTimeout(() => setWarmingUp(false), 1700);
+    return () => { clearTimeout(t1); clearTimeout(tMute); clearTimeout(tWarm); };
   }, [active, isGlobalMuted]);
 
   // --- Tap to play/pause ---
@@ -163,6 +169,12 @@ export default function VideoCard({
                 allow="autoplay; encrypted-media; picture-in-picture; accelerometer; gyroscope"
                 title={movie.title}
               ></iframe>
+              {/* Warm-up cover: fully hides the player while start-up commands fire */}
+              <div className={`absolute inset-0 z-[8] bg-black transition-opacity duration-500 ${warmingUp ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+                {thumbnailUrl && (
+                  <img src={thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                )}
+              </div>
               {/* Extra safety masks while PAUSED (YouTube shows "More videos" shelf on pause) */}
               {!isPlaying && (
                 <>
@@ -219,7 +231,7 @@ export default function VideoCard({
       <div className={`landscape-actions absolute right-3 bottom-20 flex flex-col items-center gap-4 z-30 pointer-events-auto transition-opacity duration-300 ${active ? 'opacity-100' : 'opacity-0'}`}>
         <ActionBtn
           icon={<Heart size={24} className={isSaved ? 'fill-white text-white' : 'text-white'} />}
-          label={isSaved ? "У watchlist" : "Зберегти"}
+          label={isSaved ? "Додано" : "Зберегти"}
           onClick={onToggleSave}
         />
 
@@ -230,7 +242,7 @@ export default function VideoCard({
         )}
 
         <ActionBtn
-          icon={copied ? <CheckCircle2 size={22} className="text-white" /> : <Share2 size={22} className="text-white" />}
+          icon={copied ? <CheckCircle2 size={22} className="text-white" /> : <Share size={20} className="text-white" />}
           label={copied ? "Скопійовано" : "Поділитись"}
           onClick={handleShare}
         />
