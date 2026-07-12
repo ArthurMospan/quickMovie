@@ -275,6 +275,15 @@ export default function App() {
     isFetching.current = true;
 
     try {
+      const validMovies = [];
+      const watched = userData?.watched || [];
+      let cursor = pageNum;
+
+      // A whole page can be filtered away (seen/watched/quality) — an empty
+      // feed is worse than a repeat, so we walk up to 3 pages and on the
+      // last attempt the seen-memory is ignored.
+      for (let attempt = 0; attempt < 3 && validMovies.filter(v => v.trailerKey).length < 4; attempt++) {
+      const ignoreSeen = attempt === 2;
       const data = hasActiveFilters
         ? await discoverWithFilters({
             type: filters.type,
@@ -284,17 +293,16 @@ export default function App() {
             personId: filters.personId,
             yearFrom: filters.yearFrom,
             yearTo: filters.yearTo,
-            page: pageNum
+            page: cursor
           })
-        : await getSmartFeed(pageNum, userData?.saves || []);
-
-      const validMovies = [];
-      const watched = userData?.watched || [];
+        : await getSmartFeed(cursor, userData?.saves || []);
+      cursor++;
+      if (!data.results || data.results.length === 0) break;
 
       for (const m of data.results) {
         if (watched.includes(m.id)) continue;
         // Recently seen trailers are skipped in the smart feed (not in search-like filters)
-        if (!hasActiveFilters && isSeenRecently(m.id)) continue;
+        if (!hasActiveFilters && !ignoreSeen && isSeenRecently(m.id)) continue;
 
         const isTV = m.media_type === 'tv' || (!m.title && m.name) || m.first_air_date;
 
@@ -326,6 +334,7 @@ export default function App() {
           console.warn(`Failed to fetch details for ${m.id}`, e);
         }
       }
+      }
 
       setMovies(prev => {
         if (reset) return validMovies;
@@ -333,7 +342,7 @@ export default function App() {
         const newItems = validMovies.filter(v => !currentIds.has(v.id));
         return [...prev, ...newItems];
       });
-      setPage(pageNum + 1);
+      setPage(cursor);
     } catch (e) {
       console.error("Failed to load movies:", e);
     } finally {
