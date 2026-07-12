@@ -143,6 +143,13 @@ html, body {
   box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
 }
 
+/* Desktop / mouse devices: the "rotate your phone" hint makes no sense */
+@media (hover: hover) and (pointer: fine) {
+  .portrait-hint {
+    display: none !important;
+  }
+}
+
 /* --- Landscape Mode ---
    Header buttons stay on top (compact), action buttons move to a bottom row,
    the video fills the screen height. */
@@ -151,16 +158,20 @@ html, body {
     --app-top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 56px);
   }
 
-  /* Header rises to the very top, on the same line as Telegram's own
-     corner buttons — the Огляд/Watchlist tabs fit exactly between them
-     and stop covering the video. Side paddings keep our search/avatar
-     buttons clear of Telegram's close (left) and menu (right) buttons. */
+  /* Compact header: search/avatar stay at the screen edges as before */
   .app-topnav {
-    padding-top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 6px) !important;
-    padding-bottom: 6px !important;
-    padding-left: 72px !important;
-    padding-right: 72px !important;
-    background: none !important;
+    padding-top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 10px) !important;
+    padding-bottom: 8px !important;
+  }
+
+  /* ONLY the Огляд/Watchlist tabs jump to the very top — the same line as
+     Telegram's own corner buttons (device safe-area, NOT content inset:
+     the content inset already includes the space TG buttons occupy). */
+  .topnav-tabs {
+    position: absolute !important;
+    top: calc(var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 8px);
+    left: 50%;
+    transform: translateX(-50%);
   }
 
   /* Video: full height, 16:9, centered */

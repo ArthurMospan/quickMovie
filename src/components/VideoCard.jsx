@@ -52,6 +52,7 @@ export default function VideoCard({
   // commands = extra YouTube control flashes).
   const mutedRef = useRef(isGlobalMuted);
   useEffect(() => { mutedRef.current = isGlobalMuted; }, [isGlobalMuted]);
+  const revealTimer = useRef(null);
 
   const thumbnailUrl = movie.trailerKey
     ? `https://img.youtube.com/vi/${movie.trailerKey}/maxresdefault.jpg`
@@ -80,8 +81,10 @@ export default function VideoCard({
       setIsPlaying(true);
       if (!mutedRef.current) sendCommand('unMute');
     }, 500);
-    const tWarm = setTimeout(() => setWarmingUp(false), 1700);
-    return () => { clearTimeout(t1); clearTimeout(tWarm); };
+    // Reveal is event-driven (onStateChange "playing" below) so YouTube's
+    // start-up pause/play bezel stays hidden; this is only a safety fallback.
+    const tWarm = setTimeout(() => setWarmingUp(false), 3200);
+    return () => { clearTimeout(t1); clearTimeout(tWarm); clearTimeout(revealTimer.current); };
   }, [active]);
 
   // Loop via JS API instead of loop=1&playlist=... — playlist mode is what
@@ -92,10 +95,16 @@ export default function VideoCard({
       if (typeof e.data !== 'string' || !/youtube/.test(e.origin)) return;
       let d;
       try { d = JSON.parse(e.data); } catch (err) { return; }
+      const state = d?.event === 'onStateChange' ? d.info : d?.info?.playerState;
       // Video ended → restart (manual loop, no end screen)
-      if (d?.event === 'onStateChange' && d?.info === 0) {
+      if (state === 0) {
         sendCommand('seekTo', [0, true]);
         sendCommand('playVideo');
+      }
+      // Actually playing → wait out YouTube's start-up pause bezel, then reveal
+      if (state === 1) {
+        clearTimeout(revealTimer.current);
+        revealTimer.current = setTimeout(() => setWarmingUp(false), 800);
       }
     };
     window.addEventListener('message', onMsg);
