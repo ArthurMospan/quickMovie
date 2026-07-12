@@ -191,7 +191,7 @@ html, body {
 
   /* Actions stay a column on the RIGHT (like portrait), 4 buttons fit. */
   .landscape-actions {
-    right: calc(env(safe-area-inset-right, 0px) + 14px) !important;
+    right: 28px !important; /* identical to the avatar edge offset */
     bottom: 14px !important;
     gap: 12px !important;
   }
@@ -234,7 +234,7 @@ html, body {
      the search button (left) and the avatar (right) */
   .wl-tabs {
     position: fixed;
-    top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 8px);
+    top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 12px);
     left: 50%;
     transform: translateX(-50%);
     z-index: 45;
@@ -244,9 +244,9 @@ html, body {
   .wl-tabs > div {
     background: rgba(0, 0, 0, 0.45);
     backdrop-filter: blur(12px);
+    padding: 3px !important;
   }
   .wl-tabs button {
-    padding-left: 14px;
-    padding-right: 14px;
+    padding: 6px 14px !important;
   }
 }
