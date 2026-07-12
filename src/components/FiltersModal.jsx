@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
-import { SlidersHorizontal, Search, XCircle, X } from 'lucide-react';
-import { getGenreList, searchPerson } from '../services/tmdb';
+import { SlidersHorizontal, X } from 'lucide-react';
+import { getGenreList } from '../services/tmdb';
 
 const CURRENT_YEAR = new Date().getFullYear();
 
@@ -32,10 +32,6 @@ const toggleInArray = (arr, value) =>
 
 export default function FiltersModal({ onClose, filters, setFilters }) {
   const [genres, setGenres] = useState([]);
-  const [personInput, setPersonInput] = useState(filters.personName || '');
-  const [personSuggestions, setPersonSuggestions] = useState([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [searchTimeout, setSearchTimeout] = useState(null);
 
   // Local filter state (applied on submit). Multi-select arrays.
   const [local, setLocal] = useState({
@@ -164,35 +160,15 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
     };
   }, []);
 
-  // Debounced person search
-  useEffect(() => {
-    if (searchTimeout) clearTimeout(searchTimeout);
-    if (!personInput || personInput.length < 2) {
-      setPersonSuggestions([]);
-      return;
-    }
-    const timeout = setTimeout(async () => {
-      try {
-        const res = await searchPerson(personInput);
-        setPersonSuggestions(res.results?.slice(0, 5) || []);
-      } catch (e) {
-        console.error(e);
-      }
-    }, 400);
-    setSearchTimeout(timeout);
-    return () => clearTimeout(timeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [personInput]);
-
   const handleApply = () => {
-    setFilters(local);
+    // Person filter is disabled — never apply a stale personId
+    setFilters({ ...local, personId: null, personName: '' });
     animateClose();
   };
 
   const handleReset = () => {
     setLocal({ type: 'all', genreIds: [], countries: [], minRating: 0, personId: null, personName: '', yearFrom: null, yearTo: null });
     setYearPresets([]);
-    setPersonInput('');
   };
 
   const animateClose = () => {
@@ -207,7 +183,7 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
   }, []);
 
   const activeCount = local.genreIds.length + local.countries.length +
-    (local.minRating > 0 ? 1 : 0) + (local.personId ? 1 : 0) +
+    (local.minRating > 0 ? 1 : 0) +
     (local.yearFrom || local.yearTo ? 1 : 0) + (local.type !== 'all' ? 1 : 0);
 
   const sheetStyle = {
@@ -326,52 +302,8 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
             </div>
           </div>
 
-          {/* Person Autocomplete */}
-          <div className="relative z-50">
-            <p className="text-xs font-bold text-white/50 uppercase tracking-widest mb-3">Актор або Режисер</p>
-            <div className="relative">
-              <Search size={16} className="absolute left-3 top-3.5 text-white/40" />
-              <input
-                type="text"
-                placeholder="Наприклад: Нолан, Зендея..."
-                value={personInput}
-                onChange={(e) => { setPersonInput(e.target.value); setShowSuggestions(true); }}
-                onFocus={() => setShowSuggestions(true)}
-                className="w-full bg-white/5 border border-white/10 rounded-xl py-3 pl-10 pr-10 text-sm text-white focus:outline-none focus:border-white/30 transition-colors"
-              />
-              {personInput && (
-                <button onClick={() => { setPersonInput(''); setLocal(prev => ({ ...prev, personId: null, personName: '' })); }} className="absolute right-3 top-3.5">
-                  <XCircle size={16} className="text-white/40 hover:text-white/60" />
-                </button>
-              )}
-            </div>
-            {showSuggestions && personSuggestions.length > 0 && (
-              <ul className="absolute left-0 right-0 mt-1 bg-[#1a1a1a] border border-white/10 rounded-xl overflow-hidden shadow-2xl z-50">
-                {personSuggestions.map(person => (
-                  <li
-                    key={person.id}
-                    onClick={() => {
-                      setPersonInput(person.name);
-                      setLocal(prev => ({ ...prev, personId: person.id, personName: person.name }));
-                      setShowSuggestions(false);
-                    }}
-                    className="px-4 py-3 text-sm text-white/80 hover:bg-white/10 cursor-pointer border-b border-white/5 last:border-0 flex items-center gap-3"
-                  >
-                    {person.profile_path ? (
-                      <img src={`https://image.tmdb.org/t/p/w45${person.profile_path}`} alt="" className="w-8 h-8 rounded-full object-cover" />
-                    ) : (
-                      <div className="w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/30 text-xs">?</div>
-                    )}
-                    <div>
-                      <div className="font-medium">{person.name}</div>
-                      <div className="text-[10px] text-white/40">{person.known_for_department}</div>
-                    </div>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-
+          {/* Person filter (actor/director) is DISABLED for now — search quality
+              wasn't good enough. UI removed; plumbing kept for later. */}
           {/* Country — multi-select */}
           <div>
             <p className="text-xs font-bold text-white/50 uppercase tracking-widest mb-3">Країна <span className="text-white/25 normal-case tracking-normal">· можна кілька</span></p>
