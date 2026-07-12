@@ -1,6 +1,6 @@
 // Telegram bot webhook.
 // On /start (and any other message) replies instantly with the app splash:
-// logo + single "Почати пошук" button that opens the Mini App.
+// text message + single "Почати пошук" button that opens the Mini App.
 // Setup instructions: see BOT_SETUP.md in the project root.
 
 const tgCall = async (token, method, payload) => {
@@ -36,12 +36,11 @@ export default async function handler(req, res) {
 
     const msg = update.message;
     // Reply only in private chats; any text (including /start) gets the splash.
-    // Caption & photo can be overridden via Vercel env vars BOT_CAPTION / BOT_PHOTO_URL.
+    // Text can be overridden via Vercel env var BOT_CAPTION.
     if (msg?.chat?.id && msg.chat.type === 'private') {
-      await tgCall(token, 'sendPhoto', {
+      await tgCall(token, 'sendMessage', {
         chat_id: msg.chat.id,
-        photo: process.env.BOT_PHOTO_URL || `${appUrl}/logo.png`,
-        caption: process.env.BOT_CAPTION || '🎬 <b>QuickMovie</b>\n\nДивись трейлери, відкладай фільми на потім. Спільний Watchlist з друзями. Пошук фільмів по опису, завдяки AI.',
+        text: process.env.BOT_CAPTION || '🎬 <b>QuickMovie</b>\n\n📺 Переглядай трейлери\n⏳ Відкладай на потім\n👥 Спільний Watchlist\n🤖 AI-пошук по опису\n🔔 Нагадування про вихід фільмів',
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [[
