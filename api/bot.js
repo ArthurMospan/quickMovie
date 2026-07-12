@@ -41,7 +41,7 @@ export default async function handler(req, res) {
       await tgCall(token, 'sendPhoto', {
         chat_id: msg.chat.id,
         photo: process.env.BOT_PHOTO_URL || `${appUrl}/logo.png`,
-        caption: process.env.BOT_CAPTION || '🎬 <b>QuickMovie</b>\n\nСвайпай трейлери як TikTok, зберігай фільми у вотчліст і дивись разом з друзями.',
+        caption: process.env.BOT_CAPTION || '🎬 <b>QuickMovie</b>\n\nДивись трейлери, відкладай фільми на потім. Спільний Watchlist з друзями. Пошук фільмів по опису, завдяки AI.',
         parse_mode: 'HTML',
         reply_markup: {
           inline_keyboard: [[
