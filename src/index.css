@@ -164,10 +164,12 @@ html, body {
     --app-top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 56px);
   }
 
-  /* Compact header: search/avatar stay at the screen edges as before */
+  /* Compact header: search/avatar near the edges (+4px breathing room) */
   .app-topnav {
     padding-top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 10px) !important;
     padding-bottom: 8px !important;
+    padding-left: 28px !important;
+    padding-right: 28px !important;
   }
 
   /* On the FEED the tabs jump to the very top — the same line as Telegram's
@@ -187,20 +189,15 @@ html, body {
     max-width: 100vw;
   }
 
-  /* Actions stay a column on the RIGHT (like portrait). The Грати/Пауза
-     button is hidden here (tap on the video does the same), so 4 buttons fit. */
+  /* Actions stay a column on the RIGHT (like portrait), 4 buttons fit. */
   .landscape-actions {
-    right: calc(env(safe-area-inset-right, 0px) + 10px) !important;
+    right: calc(env(safe-area-inset-right, 0px) + 14px) !important;
     bottom: 14px !important;
     gap: 12px !important;
   }
-  .landscape-hidden {
-    display: none !important;
-  }
-
   /* Movie info: bottom-left like portrait, compact, clear of the right buttons */
   .landscape-info {
-    left: calc(env(safe-area-inset-left, 0px) + 16px) !important;
+    left: calc(env(safe-area-inset-left, 0px) + 20px) !important;
     right: 110px !important;
     bottom: 12px !important;
   }
@@ -225,10 +222,31 @@ html, body {
 
   .landscape-filter-btn {
     display: flex !important;
+    left: 28px !important;
   }
 
   /* Watchlist: 3 columns in landscape (width allows) */
   .wl-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
+  }
+
+  /* Мій/Спільні/Бачив tabs move up into the header row, centered between
+     the search button (left) and the avatar (right) */
+  .wl-tabs {
+    position: fixed;
+    top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 8px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 45;
+    width: max-content;
+    padding: 0 !important;
+  }
+  .wl-tabs > div {
+    background: rgba(0, 0, 0, 0.45);
+    backdrop-filter: blur(12px);
+  }
+  .wl-tabs button {
+    padding-left: 14px;
+    padding-right: 14px;
   }
 }

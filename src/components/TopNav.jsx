@@ -52,7 +52,7 @@ export default function TopNav({ activeTab, setActiveTab, onProfileClick, userPh
       </button>
 
       {/* Center: Tabs */}
-      <div className={`topnav-tabs ${activeTab === 'feed' ? 'topnav-tabs-float' : ''} relative flex gap-5 items-center pointer-events-auto`}>
+      <div className="topnav-tabs-float relative flex gap-5 items-center pointer-events-auto">
         <TabButton active={activeTab === 'feed'} onClick={() => setActiveTab('feed')}>Огляд</TabButton>
         <TabButton active={activeTab === 'watchlist'} onClick={() => setActiveTab('watchlist')}>Watchlist</TabButton>
       </div>

@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
-import { Heart, Share, Star, CheckCircle2, VolumeX, Volume2, Bell, Play, Pause } from 'lucide-react';
+import { Heart, Share, Star, CheckCircle2, VolumeX, Volume2, Bell, Play } from 'lucide-react';
 
 // How many px of the YouTube player we crop from top & bottom.
 // YouTube UI (title bar, avatar, "watch on youtube", watermark, controls)
@@ -123,7 +123,7 @@ export default function VideoCard({
         playingRef.current = true;
         setIsPlaying(true);
         clearTimeout(revealTimer.current);
-        revealTimer.current = setTimeout(() => setWarmingUp(false), 1200);
+        revealTimer.current = setTimeout(() => setWarmingUp(false), 1500);
       }
     };
     window.addEventListener('message', onMsg);
@@ -322,13 +322,6 @@ export default function VideoCard({
           icon={copied ? <CheckCircle2 size={22} className="text-white" /> : <Share size={20} className="text-white" />}
           label={copied ? "Скопійовано" : "Поділитись"}
           onClick={handleShare}
-        />
-
-        <ActionBtn
-          className="landscape-hidden"
-          icon={isPlaying ? <Pause size={20} className="text-white" /> : <Play size={20} className="text-white" fill="white" />}
-          label={isPlaying ? "Пауза" : "Грати"}
-          onClick={handlePlayPause}
         />
 
         <ActionBtn

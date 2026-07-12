@@ -217,7 +217,7 @@ export default function WishlistView({
     <div className="absolute inset-0 z-10 bg-[#0a0a0a] flex flex-col" style={{ paddingTop: 'var(--app-top)' }}>
 
       {/* Tabs: ❤ Мій · ⭐ Спільні · 👁 Бачив */}
-      <div className="shrink-0 px-4 pb-4">
+      <div className="wl-tabs shrink-0 px-4 pb-4">
         <div className="flex p-1 bg-white/5 border border-white/10 rounded-xl">
           <button
             onClick={() => setTab('mine')}
