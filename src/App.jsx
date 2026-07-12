@@ -23,7 +23,8 @@ import {
   toggleSaveMovie,
   toggleMovieWatched,
   toggleSharedMovie,
-  updateUserPartnerId
+  updateUserPartnerId,
+  addReleaseReminder
 } from './services/firebase';
 import { SlidersHorizontal, Film, Play } from 'lucide-react';
 
@@ -36,6 +37,29 @@ const readLS = (key) => {
 };
 const writeLS = (key, arr) => {
   try { localStorage.setItem(key, JSON.stringify(arr)); } catch (e) { /* full */ }
+};
+
+// --- Seen-trailers memory: a trailer the user already watched is not shown
+// again for SEEN_TTL days (only in the no-filters smart feed). ---
+const LS_SEEN = 'qm_seen';
+const SEEN_TTL_MS = 5 * 864e5; // 5 days
+const readSeen = () => {
+  try { return JSON.parse(localStorage.getItem(LS_SEEN)) || {}; } catch (e) { return {}; }
+};
+const markSeen = (id) => {
+  try {
+    const seen = readSeen();
+    seen[id] = Date.now();
+    let entries = Object.entries(seen);
+    if (entries.length > 500) {
+      entries = entries.sort((a, b) => b[1] - a[1]).slice(0, 400); // keep newest
+    }
+    localStorage.setItem(LS_SEEN, JSON.stringify(Object.fromEntries(entries)));
+  } catch (e) { /* full */ }
+};
+const isSeenRecently = (id) => {
+  const t = readSeen()[id];
+  return !!t && (Date.now() - t) < SEEN_TTL_MS;
 };
 
 // Country code to name map
@@ -269,13 +293,15 @@ export default function App() {
             yearTo: filters.yearTo,
             page: pageNum
           })
-        : await getSmartFeed(pageNum);
+        : await getSmartFeed(pageNum, userData?.saves || []);
 
       const validMovies = [];
       const watched = userData?.watched || [];
 
       for (const m of data.results) {
         if (watched.includes(m.id)) continue;
+        // Recently seen trailers are skipped in the smart feed (not in search-like filters)
+        if (!hasActiveFilters && isSeenRecently(m.id)) continue;
 
         const isTV = m.media_type === 'tv' || (!m.title && m.name) || m.first_air_date;
 
@@ -321,7 +347,7 @@ export default function App() {
       setLoading(false);
       isFetching.current = false;
     }
-  }, [filters, hasActiveFilters, userData?.watched]);
+  }, [filters, hasActiveFilters, userData?.watched, userData?.saves]);
 
   // --- Initial Load / filter change ---
   useEffect(() => {
@@ -473,6 +499,31 @@ export default function App() {
   // --- Filtered movies for feed ---
   const feedMovies = movies.filter(m => m.trailerKey);
 
+  // --- Remember which trailer the user is currently watching ---
+  useEffect(() => {
+    if (activeTab !== 'feed') return;
+    const current = feedMovies[activeIndex];
+    if (current) markSeen(current.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeIndex, activeTab, feedMovies.length]);
+
+  // --- Release reminder: Telegram-bot message on release day (fallback: Google Calendar) ---
+  const handleRemind = user?.tgId
+    ? async (movie) => {
+        try {
+          await addReleaseReminder(user.uid, {
+            id: movie.id,
+            title: movie.title,
+            date: movie.release_date
+          });
+          showToast('Нагадаємо в Telegram у день виходу 🔔');
+        } catch (e) {
+          console.warn('Reminder save failed:', e?.message);
+          showToast('Не вдалося зберегти нагадування');
+        }
+      }
+    : null; // no Telegram user → VideoCard falls back to Google Calendar
+
   // --- Filter summary text ---
   const filterSummary = getFilterSummary(filters, genreMap);
   const hasFilters = filterSummary.length > 0;
@@ -547,6 +598,7 @@ export default function App() {
                 isGlobalMuted={isGlobalMuted}
                 setIsGlobalMuted={setIsGlobalMuted}
                 isFirstVideo={index === 0}
+                onRemind={handleRemind}
               />
             ))}
 

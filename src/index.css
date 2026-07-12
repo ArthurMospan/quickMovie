@@ -148,13 +148,19 @@ html, body {
    the video fills the screen height. */
 @media (orientation: landscape) and (max-height: 600px) {
   :root {
-    --app-top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 64px);
+    --app-top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 56px);
   }
 
-  /* Compact header, centered content still fits in one row */
+  /* Header rises to the very top, on the same line as Telegram's own
+     corner buttons — the Огляд/Watchlist tabs fit exactly between them
+     and stop covering the video. Side paddings keep our search/avatar
+     buttons clear of Telegram's close (left) and menu (right) buttons. */
   .app-topnav {
-    padding-top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 10px) !important;
-    padding-bottom: 8px !important;
+    padding-top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 6px) !important;
+    padding-bottom: 6px !important;
+    padding-left: 72px !important;
+    padding-right: 72px !important;
+    background: none !important;
   }
 
   /* Video: full height, 16:9, centered */

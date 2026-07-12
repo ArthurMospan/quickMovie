@@ -128,6 +128,20 @@ export const toggleSharedMovie = async (uid, movieId, isShared) => {
   });
 };
 
+// --- Release reminder (sent by /api/cron-reminders via the Telegram bot) ---
+export const addReleaseReminder = async (uid, reminder) => {
+  if (!uid || !reminder?.date) return;
+  await ensureUserDoc(uid);
+  const userDocRef = doc(db, 'users', uid);
+  await updateDoc(userDocRef, {
+    reminders: arrayUnion({
+      id: reminder.id,
+      title: reminder.title || '',
+      date: reminder.date // YYYY-MM-DD
+    })
+  });
+};
+
 export const markMovieWatched = async (uid, movieId) => {
   if (!uid) return;
   const userDocRef = doc(db, 'users', uid);

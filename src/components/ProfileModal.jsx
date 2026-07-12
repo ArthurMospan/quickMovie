@@ -134,6 +134,18 @@ export default function ProfileModal({ onClose, user, userData, partnerId, partn
     }
   };
 
+  // Native "add to home screen" prompt (Telegram Bot API 8.0+)
+  const handleAddToHome = () => {
+    const wa = window.Telegram?.WebApp;
+    try {
+      if (typeof wa?.addToHomeScreen === 'function') {
+        wa.addToHomeScreen();
+        return;
+      }
+    } catch (e) { /* older client */ }
+    flash('Оновіть Telegram, або: меню бота (⋮) → «Add to Home Screen»', 4000);
+  };
+
   const getInitials = (name) => {
     if (!name) return '?';
     const parts = name.split(' ');
@@ -291,8 +303,26 @@ export default function ProfileModal({ onClose, user, userData, partnerId, partn
             )}
           </div>
 
-          {/* Add to Home Screen — only relevant OUTSIDE Telegram */}
-          {!insideTG && (
+          {/* Add to Home Screen */}
+          {insideTG ? (
+            // Inside Telegram: native addToHomeScreen() (Bot API 8.0+),
+            // with text instructions as a fallback for older clients.
+            <button
+              onClick={handleAddToHome}
+              className="w-full bg-white/[0.04] rounded-2xl p-4 flex gap-3 items-center text-left active:scale-[0.98] transition-transform"
+            >
+              <div className="p-2 bg-white/10 rounded-xl shrink-0">
+                <Smartphone size={16} className="text-white/60" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-xs font-bold text-white/90 mb-0.5">Додати на початковий екран</h3>
+                <p className="text-[10px] text-white/45 leading-relaxed">
+                  Іконка QuickMovie на екрані телефону — відкривається одним дотиком, без пошуку бота.
+                </p>
+              </div>
+              <ChevronRight size={14} className="text-white/30 shrink-0" />
+            </button>
+          ) : (
             <div className="bg-white/[0.04] rounded-2xl p-4 flex gap-3 items-start">
               <div className="p-2 bg-white/10 rounded-xl mt-0.5 shrink-0">
                 <Smartphone size={16} className="text-white/60" />

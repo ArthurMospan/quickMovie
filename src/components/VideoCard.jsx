@@ -37,7 +37,7 @@ function openCalendarReminder(movie) {
 
 export default function VideoCard({
   movie, active, isSaved, onToggleSave,
-  isGlobalMuted, setIsGlobalMuted, isFirstVideo
+  isGlobalMuted, setIsGlobalMuted, isFirstVideo, onRemind
 }) {
   const iframeRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -48,6 +48,10 @@ export default function VideoCard({
   const [warmingUp, setWarmingUp] = useState(true);
   const speeds = [1, 1.2, 1.5, 2];
   const upcoming = useMemo(() => isUpcoming(movie.release_date), [movie.release_date]);
+  // Latest mute state without re-running the activation effect (extra JS-API
+  // commands = extra YouTube control flashes).
+  const mutedRef = useRef(isGlobalMuted);
+  useEffect(() => { mutedRef.current = isGlobalMuted; }, [isGlobalMuted]);
 
   const thumbnailUrl = movie.trailerKey
     ? `https://img.youtube.com/vi/${movie.trailerKey}/maxresdefault.jpg`
@@ -63,18 +67,49 @@ export default function VideoCard({
 
   // When card becomes active, try autoplay + set state.
   // Keep JS-API commands to a minimum — each one can make the mobile player
-  // flash its native controls for a moment.
+  // flash its native controls for a moment. The URL already starts muted, so
+  // we only send unMute when sound is on (one command less = one flash less).
   useEffect(() => {
     if (!active) {
       setIsPlaying(false);
       return;
     }
     setWarmingUp(true);
-    const t1 = setTimeout(() => { sendCommand('playVideo'); setIsPlaying(true); }, 500);
-    const tMute = setTimeout(() => sendCommand(isGlobalMuted ? 'mute' : 'unMute'), 750);
+    const t1 = setTimeout(() => {
+      sendCommand('playVideo');
+      setIsPlaying(true);
+      if (!mutedRef.current) sendCommand('unMute');
+    }, 500);
     const tWarm = setTimeout(() => setWarmingUp(false), 1700);
-    return () => { clearTimeout(t1); clearTimeout(tMute); clearTimeout(tWarm); };
-  }, [active, isGlobalMuted]);
+    return () => { clearTimeout(t1); clearTimeout(tWarm); };
+  }, [active]);
+
+  // Loop via JS API instead of loop=1&playlist=... — playlist mode is what
+  // makes YouTube render the prev/pause/next control trio on mobile.
+  useEffect(() => {
+    if (!active) return;
+    const onMsg = (e) => {
+      if (typeof e.data !== 'string' || !/youtube/.test(e.origin)) return;
+      let d;
+      try { d = JSON.parse(e.data); } catch (err) { return; }
+      // Video ended → restart (manual loop, no end screen)
+      if (d?.event === 'onStateChange' && d?.info === 0) {
+        sendCommand('seekTo', [0, true]);
+        sendCommand('playVideo');
+      }
+    };
+    window.addEventListener('message', onMsg);
+    return () => window.removeEventListener('message', onMsg);
+  }, [active]);
+
+  // Handshake so the iframe starts posting onStateChange events to us
+  const handleIframeLoad = () => {
+    try {
+      iframeRef.current?.contentWindow?.postMessage(
+        JSON.stringify({ event: 'listening', id: movie.trailerKey, channel: 'widget' }), '*'
+      );
+    } catch (e) { /* not ready */ }
+  };
 
   // --- Tap to play/pause ---
   const handlePlayPause = () => {
@@ -162,9 +197,10 @@ export default function VideoCard({
             <>
               <iframe
                 ref={iframeRef}
+                onLoad={handleIframeLoad}
                 className="absolute left-0 w-full"
                 style={{ top: `-${YT_CROP}px`, height: `calc(100% + ${YT_CROP * 2}px)` }}
-                src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&loop=1&playlist=${movie.trailerKey}&enablejsapi=1&disablekb=1&fs=0&iv_load_policy=3&cc_load_policy=0&origin=${encodeURIComponent(window.location.origin)}`}
+                src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&enablejsapi=1&disablekb=1&fs=0&iv_load_policy=3&cc_load_policy=0&origin=${encodeURIComponent(window.location.origin)}`}
                 frameBorder="0"
                 allow="autoplay; encrypted-media; picture-in-picture; accelerometer; gyroscope"
                 title={movie.title}
@@ -236,7 +272,11 @@ export default function VideoCard({
         />
 
         {upcoming ? (
-          <ActionBtn icon={<Bell size={22} className="text-white" />} label="Нагадати" onClick={() => openCalendarReminder(movie)} />
+          <ActionBtn
+            icon={<Bell size={22} className="text-white" />}
+            label="Нагадати"
+            onClick={() => onRemind ? onRemind(movie) : openCalendarReminder(movie)}
+          />
         ) : (
           <ActionBtn icon={<div className="font-bold text-white text-sm">x{speedState}</div>} label="Швидкість" onClick={handleSpeedChange} />
         )}

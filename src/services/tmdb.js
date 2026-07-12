@@ -69,8 +69,40 @@ export const discoverTV = async (page = 1) => {
   });
 };
 
+// --- Quality gate ---
+// TMDB is flooded with regional titles whose ratings are inflated to 9–10
+// by a small fanbase. A real 9+ has thousands of votes; a fake one doesn't.
+const INFLATED_RATING_LANGS = new Set(['hi', 'ta', 'te', 'ml', 'kn', 'bn', 'pa', 'mr', 'zh', 'cn']);
+export const passesQualityGate = (r, { allowRegional = false } = {}) => {
+  const va = r.vote_average || 0;
+  const vc = r.vote_count || 0;
+  if (va >= 8.8 && vc < 2500) return false; // "10.0" with 40 votes = fake
+  if (!allowRegional && INFLATED_RATING_LANGS.has(r.original_language) && vc < 1000) return false;
+  return true;
+};
+
+// --- Recommendations cache (seeded by movies the user saved) ---
+const recsCache = new Map();
+const getRecsFor = async (id) => {
+  if (recsCache.has(id)) return recsCache.get(id);
+  let results = [];
+  try {
+    const r = await fetchFromTMDB(`/movie/${id}/recommendations`, { language: 'uk-UA' });
+    results = (r.results || []).map(x => ({ ...x, media_type: x.media_type || 'movie' }));
+  } catch (e) { /* not a movie — try tv */ }
+  if (results.length === 0) {
+    try {
+      const r = await fetchFromTMDB(`/tv/${id}/recommendations`, { language: 'uk-UA' });
+      results = (r.results || []).map(x => ({ ...x, media_type: x.media_type || 'tv' }));
+    } catch (e) { /* no recs at all */ }
+  }
+  recsCache.set(id, results);
+  return results;
+};
+
 // --- Smart Feed (no filters): TikTok-style mix ---
-// Blend of: trending this week + fresh well-rated + all-time masterpieces.
+// Blend of: trending this week + fresh well-rated + all-time masterpieces
+// + recommendations seeded by the user's saved titles (Instagram-reels style).
 // Old titles only make it in if they're top-tier (high rating + many votes).
 const lightShuffle = (arr, window = 4) => {
   // Shuffle within a sliding window: keeps overall ranking, adds variety
@@ -82,10 +114,14 @@ const lightShuffle = (arr, window = 4) => {
   return a;
 };
 
-export const getSmartFeed = async (page = 1) => {
+export const getSmartFeed = async (page = 1, seedIds = []) => {
   const freshFrom = new Date(Date.now() - 730 * 864e5).toISOString().slice(0, 10); // ~2 years back
 
-  const [trending, fresh, topMovies, topTV] = await Promise.allSettled([
+  // Up to 3 random seeds from the user's saved list → their recommendations
+  // get blended into every feed page ("more like what you save").
+  const seeds = [...seedIds].sort(() => Math.random() - 0.5).slice(0, 3);
+
+  const [trending, fresh, topMovies, topTV, ...recs] = await Promise.allSettled([
     // 1. What the world watches right now (movies + series)
     fetchFromTMDB('/trending/all/week', { language: 'uk-UA', page }),
     // 2. New & actually good
@@ -93,7 +129,7 @@ export const getSmartFeed = async (page = 1) => {
       language: 'uk-UA', include_adult: false, page,
       sort_by: 'popularity.desc',
       'primary_release_date.gte': freshFrom,
-      'vote_average.gte': 6.5, 'vote_count.gte': 100
+      'vote_average.gte': 6.6, 'vote_count.gte': 200
     }),
     // 3. All-time movie masterpieces (older stuff only if truly great)
     fetchFromTMDB('/discover/movie', {
@@ -106,7 +142,9 @@ export const getSmartFeed = async (page = 1) => {
       language: 'uk-UA', include_adult: false, page,
       sort_by: 'vote_average.desc',
       'vote_average.gte': 7.8, 'vote_count.gte': 1500
-    })
+    }),
+    // 5+. Similar to what the user saved
+    ...seeds.map(id => getRecsFor(id))
   ]);
 
   const take = (settled, n, mediaType) => {
@@ -117,10 +155,20 @@ export const getSmartFeed = async (page = 1) => {
       .map(r => (mediaType && !r.media_type ? { ...r, media_type: mediaType } : r));
   };
 
-  // Weights per page: trending 8, fresh 6, top movies 4, top series 3
+  // Recommendation results: rotate the slice with the page so they don't repeat
+  const recItems = recs.flatMap(settled => {
+    if (settled.status !== 'fulfilled') return [];
+    const list = settled.value || [];
+    if (list.length === 0) return [];
+    const start = ((page - 1) * 3) % list.length;
+    return list.slice(start, start + 3);
+  });
+
+  // Weights per page: trending 7, recs up to 9, fresh 5, top movies 4, top series 3
   const mix = [
-    ...take(trending, 8),
-    ...take(fresh, 6, 'movie'),
+    ...take(trending, 7),
+    ...recItems,
+    ...take(fresh, 5, 'movie'),
     ...take(topMovies, 4, 'movie'),
     ...take(topTV, 3, 'tv')
   ];
@@ -134,10 +182,62 @@ export const getSmartFeed = async (page = 1) => {
     return true;
   });
 
+  // Quality gate: kill fake 9–10s and no-name regional titles
+  const cleaned = deduped.filter(r => (r.vote_count || 0) >= 30 && passesQualityGate(r));
+
   return {
-    results: lightShuffle(deduped),
+    results: lightShuffle(cleaned),
     total_pages: 500,
     total_results: 10000
+  };
+};
+
+// --- Person filmography (exact) ---
+// TMDB /discover/tv does NOT support with_people at all, so discover-based
+// person filtering silently returned unrelated series. Instead we take the
+// person's real combined credits and filter/sort/paginate them client-side.
+const personCreditsCache = new Map();
+export const getPersonMedia = async ({ personId, type = 'all', genreIds = [], minRating = 0, yearFrom, yearTo, page = 1 }) => {
+  let credits = personCreditsCache.get(personId);
+  if (!credits) {
+    credits = await fetchFromTMDB(`/person/${personId}/combined_credits`, { language: 'uk-UA' });
+    personCreditsCache.set(personId, credits);
+  }
+
+  const EXCLUDE_TV_GENRES = new Set([10767, 10763, 10764]); // talk-show, news, reality
+  const pool = [
+    ...(credits.cast || []),
+    ...(credits.crew || []).filter(c => c.job === 'Director')
+  ];
+
+  const seen = new Set();
+  const items = pool.filter(m => {
+    const key = `${m.media_type}_${m.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    if (m.media_type !== 'movie' && m.media_type !== 'tv') return false;
+    // Guest appearances on talk shows / cameos as "Self" are not their films
+    if (m.media_type === 'tv' && (m.genre_ids || []).some(g => EXCLUDE_TV_GENRES.has(g))) return false;
+    if (m.character && /\bself\b/i.test(m.character)) return false;
+    if (type === 'movie' && m.media_type !== 'movie') return false;
+    if (type === 'series' && m.media_type !== 'tv') return false;
+    if (genreIds.length > 0 && !(m.genre_ids || []).some(g => genreIds.includes(g))) return false;
+    if (minRating > 0 && (m.vote_average || 0) < minRating) return false;
+    const y = parseInt((m.release_date || m.first_air_date || '').slice(0, 4), 10);
+    if (yearFrom && (!y || y < yearFrom)) return false;
+    if (yearTo && (!y || y > yearTo)) return false;
+    return true;
+  });
+
+  // Most-known first
+  items.sort((a, b) => (b.vote_count || 0) - (a.vote_count || 0));
+
+  const per = 20;
+  const start = (page - 1) * per;
+  return {
+    results: items.slice(start, start + per),
+    total_pages: Math.max(1, Math.ceil(items.length / per)),
+    total_results: items.length
   };
 };
 
@@ -146,11 +246,17 @@ export const getSmartFeed = async (page = 1) => {
 // When type='all', fetches BOTH movies and TV and merges them for maximum variety.
 export const discoverWithFilters = async ({ type = 'movie', genreIds = [], countries = [], minRating, personId, yearFrom, yearTo, page = 1 }) => {
 
+  // Person selected → use their REAL filmography (discover can't do this for TV,
+  // and with type='all' it used to mix in completely unrelated series).
+  if (personId) {
+    return getPersonMedia({ personId, type, genreIds, minRating, yearFrom, yearTo, page });
+  }
+
   // If type is 'all', fetch both movies and TV in parallel and merge results
   if (type === 'all') {
     const [movieData, tvData] = await Promise.all([
-      discoverWithFilters({ type: 'movie', genreIds, countries, minRating, personId, yearFrom, yearTo, page }),
-      discoverWithFilters({ type: 'series', genreIds, countries, minRating, personId, yearFrom, yearTo, page })
+      discoverWithFilters({ type: 'movie', genreIds, countries, minRating, yearFrom, yearTo, page }),
+      discoverWithFilters({ type: 'series', genreIds, countries, minRating, yearFrom, yearTo, page })
     ]);
 
     // Interleave results for variety: movie, tv, movie, tv...
@@ -186,12 +292,6 @@ export const discoverWithFilters = async ({ type = 'movie', genreIds = [], count
     if (countries && countries.length > 0) params.with_origin_country = countries.join('|'); // OR
     if (minRating && minRating > 0) params['vote_average.gte'] = minRating;
 
-    if (personId && !opts.skipPerson) {
-      if (type !== 'series') {
-        params.with_people = personId;
-      }
-    }
-
     if (!opts.skipYear) {
       if (yearFrom) {
         const dateKey = type === 'series' ? 'first_air_date.gte' : 'primary_release_date.gte';
@@ -206,22 +306,22 @@ export const discoverWithFilters = async ({ type = 'movie', genreIds = [], count
     return params;
   };
 
+  // Quality gate — but respect an explicit country choice (user picked India
+  // on purpose → don't hide Indian titles, only fake ratings)
+  const clean = (data) => ({
+    ...data,
+    results: (data.results || []).filter(r => passesQualityGate(r, { allowRegional: countries.length > 0 }))
+  });
+
   // Try 1: Full filters
-  let data = await fetchFromTMDB(endpoint, buildParams());
-  if (data.results && data.results.length > 0) return data;
+  let data = clean(await fetchFromTMDB(endpoint, buildParams()));
+  if (data.results.length > 0) return data;
 
   // Try 2: Drop year constraints
   if (yearFrom || yearTo) {
     console.warn('Filters fallback: removing year range');
-    data = await fetchFromTMDB(endpoint, buildParams({ skipYear: true }));
-    if (data.results && data.results.length > 0) return data;
-  }
-
-  // Try 3: Drop person + year constraints
-  if (personId) {
-    console.warn('Filters fallback: removing person filter');
-    data = await fetchFromTMDB(endpoint, buildParams({ skipYear: true, skipPerson: true }));
-    if (data.results && data.results.length > 0) return data;
+    data = clean(await fetchFromTMDB(endpoint, buildParams({ skipYear: true })));
+    if (data.results.length > 0) return data;
   }
 
   return data; // Return whatever we got
