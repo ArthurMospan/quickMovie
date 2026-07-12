@@ -143,6 +143,12 @@ html, body {
   box-shadow: 0 0 50px rgba(0, 0, 0, 0.8);
 }
 
+/* Bottom sheets (filters / profile): keep content off the phone's side bars */
+.sheet-modal {
+  padding-left: env(safe-area-inset-left, 0px);
+  padding-right: env(safe-area-inset-right, 0px);
+}
+
 /* Desktop / mouse devices: the "rotate your phone" hint makes no sense */
 @media (hover: hover) and (pointer: fine) {
   .portrait-hint {
@@ -158,19 +164,16 @@ html, body {
     --app-top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 56px);
   }
 
-  /* Compact header: search/avatar at the edges, but pushed off the iPhone
-     notch/Dynamic Island (safe-area-inset-left/right in landscape). */
+  /* Compact header: search/avatar stay at the screen edges as before */
   .app-topnav {
     padding-top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 10px) !important;
     padding-bottom: 8px !important;
-    padding-left: calc(env(safe-area-inset-left, 0px) + 24px) !important;
-    padding-right: calc(env(safe-area-inset-right, 0px) + 24px) !important;
   }
 
-  /* ONLY the Огляд/Watchlist tabs jump to the very top — the same line as
-     Telegram's own corner buttons (device safe-area, NOT content inset:
-     the content inset already includes the space TG buttons occupy). */
-  .topnav-tabs {
+  /* On the FEED the tabs jump to the very top — the same line as Telegram's
+     own corner buttons. On the watchlist they stay in the normal header row
+     between the search button and the avatar. */
+  .topnav-tabs-float {
     position: absolute !important;
     top: calc(var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 8px);
     left: 50%;
@@ -184,39 +187,30 @@ html, body {
     max-width: 100vw;
   }
 
-  /* Right action column → horizontal row at the bottom center */
+  /* Actions stay a column on the RIGHT (like portrait). The Грати/Пауза
+     button is hidden here (tap on the video does the same), so 4 buttons fit. */
   .landscape-actions {
-    flex-direction: row !important;
-    align-items: flex-end !important;
-    gap: 26px !important;
-    right: auto !important;
-    left: 50% !important;
-    bottom: 10px !important;
-    transform: translateX(-50%);
+    right: calc(env(safe-area-inset-right, 0px) + 10px) !important;
+    bottom: 14px !important;
+    gap: 12px !important;
   }
-
-  /* Dark bottom gradient is hidden — clean fullscreen video */
-  .landscape-hide {
+  .landscape-hidden {
     display: none !important;
   }
 
-  /* Movie info moves to the top, under the tabs line, compact & centered */
+  /* Movie info: bottom-left like portrait, compact, clear of the right buttons */
   .landscape-info {
-    bottom: auto !important;
-    top: calc(var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 44px);
-    left: 96px !important;
-    right: 96px !important;
-    align-items: center;
-    text-align: center;
+    left: calc(env(safe-area-inset-left, 0px) + 16px) !important;
+    right: 110px !important;
+    bottom: 12px !important;
   }
   .landscape-info h2 {
-    font-size: 1.05rem !important;
+    font-size: 1.1rem !important;
     line-height: 1.25 !important;
   }
   .landscape-info p {
     font-size: 0.75rem !important;
     -webkit-line-clamp: 2 !important;
-    color: rgba(255, 255, 255, 0.75) !important;
   }
 
   /* Filter pill hidden in landscape */
@@ -231,7 +225,6 @@ html, body {
 
   .landscape-filter-btn {
     display: flex !important;
-    left: calc(env(safe-area-inset-left, 0px) + 24px) !important;
   }
 
   /* Watchlist: 3 columns in landscape (width allows) */

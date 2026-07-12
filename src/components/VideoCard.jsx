@@ -6,9 +6,9 @@ import { Heart, Share, Star, CheckCircle2, VolumeX, Volume2, Bell, Play, Pause }
 // physically lives in these zones — cropping removes it for real.
 const YT_CROP = 60;
 
-function ActionBtn({ icon, label, onClick }) {
+function ActionBtn({ icon, label, onClick, className = '' }) {
   return (
-    <button onClick={onClick} className="flex flex-col items-center gap-1 group active:scale-90 transition-transform">
+    <button onClick={onClick} className={`flex flex-col items-center gap-1 group active:scale-90 transition-transform ${className}`}>
       <div className="w-10 h-10 rounded-full bg-white/10 backdrop-blur-md flex items-center justify-center border border-white/10 group-hover:bg-white/20 transition-colors">
         {icon}
       </div>
@@ -82,6 +82,7 @@ export default function VideoCard({
     setWarmingUp(true);
     setEmbedError(false);
     playingRef.current = false;
+    setIsPlaying(true); // optimistic: autoplay starts by itself; events correct this
     const t1 = setTimeout(() => {
       // Autoplay usually starts by itself; a redundant playVideo on an
       // already-playing video makes YouTube flash its pause bezel.
@@ -273,7 +274,7 @@ export default function VideoCard({
           className="absolute inset-0 pointer-events-auto"
           style={{ zIndex: 25 }}
         >
-          {!isPlaying && (
+          {!isPlaying && !warmingUp && (
             <div className="absolute inset-0 flex items-center justify-center bg-black/30">
               <div className="w-20 h-20 rounded-full bg-white/20 backdrop-blur-xl flex items-center justify-center border border-white/30 animate-pulse">
                 <Play size={40} className="text-white ml-1" fill="white" />
@@ -324,6 +325,7 @@ export default function VideoCard({
         />
 
         <ActionBtn
+          className="landscape-hidden"
           icon={isPlaying ? <Pause size={20} className="text-white" /> : <Play size={20} className="text-white" fill="white" />}
           label={isPlaying ? "Пауза" : "Грати"}
           onClick={handlePlayPause}

@@ -162,7 +162,7 @@ export default function ProfileModal({ onClose, user, userData, partnerId, partn
       <div
         ref={sheetRef}
         style={sheetStyle}
-        className="relative w-full min-h-[72vh] max-h-[92vh] overflow-y-auto scrollbar-hide bg-[#0b0b0b]/95 backdrop-blur-2xl border-t border-white/10 rounded-t-3xl shadow-2xl animate-in overflow-x-hidden"
+        className="sheet-modal relative w-full min-h-[72vh] max-h-[92vh] overflow-y-auto scrollbar-hide bg-[#0b0b0b]/95 backdrop-blur-2xl border-t border-white/10 rounded-t-3xl shadow-2xl animate-in overflow-x-hidden"
       >
 
         {/* Ambient glow — same visual language as the main screen */}

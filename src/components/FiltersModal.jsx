@@ -226,7 +226,7 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
       <div
         ref={sheetRef}
         style={sheetStyle}
-        className="relative w-full bg-[#111] border-t border-white/10 rounded-t-3xl flex flex-col max-h-[85vh] animate-in"
+        className="sheet-modal relative w-full bg-[#111] border-t border-white/10 rounded-t-3xl flex flex-col max-h-[85vh] animate-in"
       >
 
         {/* Header = always-draggable zone */}
