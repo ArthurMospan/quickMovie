@@ -81,22 +81,27 @@ export const passesQualityGate = (r, { allowRegional = false } = {}) => {
   return true;
 };
 
-// --- Recommendations cache (seeded by movies the user saved) ---
+// --- Recommendations cache (seeded by titles the user saved) ---
+// Saved keys: bare numeric id = movie (legacy incl.), 'tv_<id>' = series.
 const recsCache = new Map();
-const getRecsFor = async (id) => {
-  if (recsCache.has(id)) return recsCache.get(id);
+const getRecsFor = async (key) => {
+  if (recsCache.has(key)) return recsCache.get(key);
+  const isTvKey = typeof key === 'string' && key.startsWith('tv_');
+  const id = isTvKey ? key.slice(3) : key;
   let results = [];
-  try {
-    const r = await fetchFromTMDB(`/movie/${id}/recommendations`, { language: 'uk-UA' });
-    results = (r.results || []).map(x => ({ ...x, media_type: x.media_type || 'movie' }));
-  } catch (e) { /* not a movie — try tv */ }
+  if (!isTvKey) {
+    try {
+      const r = await fetchFromTMDB(`/movie/${id}/recommendations`, { language: 'uk-UA' });
+      results = (r.results || []).map(x => ({ ...x, media_type: x.media_type || 'movie' }));
+    } catch (e) { /* not a movie — try tv below */ }
+  }
   if (results.length === 0) {
     try {
       const r = await fetchFromTMDB(`/tv/${id}/recommendations`, { language: 'uk-UA' });
       results = (r.results || []).map(x => ({ ...x, media_type: x.media_type || 'tv' }));
     } catch (e) { /* no recs at all */ }
   }
-  recsCache.set(id, results);
+  recsCache.set(key, results);
   return results;
 };
 
@@ -332,22 +337,34 @@ export const discoverWithFilters = async ({ type = 'movie', genreIds = [], count
   return data; // Return whatever we got
 };
 
+// --- Details (in-memory cache: the same title often reappears across pages) ---
+const detailsCache = new Map();
+const cacheDetails = (key, d) => {
+  detailsCache.set(key, d);
+  if (detailsCache.size > 300) detailsCache.delete(detailsCache.keys().next().value);
+  return d;
+};
+
 // --- Movie Details with Videos ---
 export const getMovieDetailsWithVideos = async (id) => {
-  return fetchFromTMDB(`/movie/${id}`, {
+  const k = `m_${id}`;
+  if (detailsCache.has(k)) return detailsCache.get(k);
+  return cacheDetails(k, await fetchFromTMDB(`/movie/${id}`, {
     append_to_response: 'videos,credits',
     language: 'uk-UA',
     include_video_language: 'uk,en,null'
-  });
+  }));
 };
 
 // --- TV Details with Videos ---
 export const getTVDetailsWithVideos = async (id) => {
-  return fetchFromTMDB(`/tv/${id}`, {
+  const k = `s_${id}`;
+  if (detailsCache.has(k)) return detailsCache.get(k);
+  return cacheDetails(k, await fetchFromTMDB(`/tv/${id}`, {
     append_to_response: 'videos,credits',
     language: 'uk-UA',
     include_video_language: 'uk,en,null'
-  });
+  }));
 };
 
 // --- Search Movie ---
@@ -412,6 +429,63 @@ export const getMediaById = async (key) => {
     // TV not found either
   }
   return null;
+};
+
+// --- Batched wishlist fetch with a persistent cache ---
+// Big lists fired all requests at once → TMDB 429 → titles silently vanished
+// from the wishlist. Now: localStorage cache (7 days) + batches of 8 + one
+// retry per failed item. onBatch(partial) lets the UI render progressively.
+const MEDIA_CACHE_KEY = 'qm_media_cache';
+const MEDIA_TTL_MS = 7 * 864e5;
+const readMediaCache = () => {
+  try { return JSON.parse(localStorage.getItem(MEDIA_CACHE_KEY)) || {}; } catch (e) { return {}; }
+};
+const writeMediaCache = (cache) => {
+  try {
+    let entries = Object.entries(cache);
+    if (entries.length > 220) entries = entries.sort((a, b) => b[1].t - a[1].t).slice(0, 180);
+    localStorage.setItem(MEDIA_CACHE_KEY, JSON.stringify(Object.fromEntries(entries)));
+  } catch (e) { /* full */ }
+};
+// Keep only the fields the wishlist renders — localStorage is small
+const slimMedia = (v) => ({
+  id: v.id, title: v.title, name: v.name,
+  original_title: v.original_title, original_name: v.original_name,
+  poster_path: v.poster_path, release_date: v.release_date, media_type: v.media_type
+});
+
+export const getMediaByIds = async (keys, onBatch) => {
+  const cache = readMediaCache();
+  const now = Date.now();
+  const result = {};
+  const missing = [];
+  for (const k of keys) {
+    const hit = cache[k];
+    if (hit && now - hit.t < MEDIA_TTL_MS) result[k] = hit.d;
+    else missing.push(k);
+  }
+  if (missing.length === 0) return result;
+
+  for (let i = 0; i < missing.length; i += 8) {
+    const batch = missing.slice(i, i + 8);
+    const settled = await Promise.allSettled(batch.map(k => getMediaById(k)));
+    for (let j = 0; j < batch.length; j++) {
+      let v = settled[j].status === 'fulfilled' ? settled[j].value : null;
+      if (!v) {
+        // Single retry after a pause — covers 429 bursts on large lists
+        await new Promise(r => setTimeout(r, 1100));
+        try { v = await getMediaById(batch[j]); } catch (e) { v = null; }
+      }
+      if (v) {
+        const s = slimMedia(v);
+        result[batch[j]] = s;
+        cache[batch[j]] = { t: now, d: s };
+      }
+    }
+    if (onBatch) onBatch({ ...result });
+  }
+  writeMediaCache(cache);
+  return result;
 };
 
 // --- Extract Trailer Key ---

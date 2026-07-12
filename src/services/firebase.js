@@ -1,6 +1,6 @@
 import { initializeApp } from 'firebase/app';
 import { getFirestore, doc, setDoc, getDoc, updateDoc, arrayUnion, arrayRemove, onSnapshot } from 'firebase/firestore';
-import { getAuth, signInAnonymously } from 'firebase/auth';
+import { getAuth, signInAnonymously, signInWithCustomToken } from 'firebase/auth';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
@@ -20,15 +20,37 @@ export const auth = getAuth(app);
 
 // Get Telegram user from WebApp SDK.
 // IMPORTANT: Telegram user data must NOT depend on Firebase auth succeeding.
-// Firebase anonymous auth is attempted separately and non-blocking.
+// Auth order: 1) verified identity — initData is validated on the server
+// (/api/auth, HMAC with the bot token) and exchanged for a Firebase custom
+// token with uid tg_<id>, so Firestore rules can enforce "only my doc";
+// 2) fallback — anonymous auth (legacy mode, works until rules are tightened).
 export const getTelegramUser = async () => {
   const tgUser = window.Telegram?.WebApp?.initDataUnsafe?.user;
+  const initData = window.Telegram?.WebApp?.initData;
 
-  // Firebase anonymous auth (needed only for Firestore rules) — never blocks user detection
-  try {
-    await signInAnonymously(auth);
-  } catch (e) {
-    console.warn('[Firebase] Anonymous auth failed (saves may not work):', e?.message);
+  let authed = false;
+  if (initData) {
+    try {
+      const r = await fetch('/api/auth', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ initData })
+      });
+      if (r.ok) {
+        const { token } = await r.json();
+        if (token) {
+          await signInWithCustomToken(auth, token);
+          authed = true;
+        }
+      }
+    } catch (e) { /* /api/auth not configured yet — fall back to anonymous */ }
+  }
+  if (!authed) {
+    try {
+      await signInAnonymously(auth);
+    } catch (e) {
+      console.warn('[Firebase] Anonymous auth failed (saves may not work):', e?.message);
+    }
   }
 
   if (tgUser && tgUser.id) {
@@ -107,33 +129,53 @@ export const updateUserPartnerId = async (uid, partnerId) => {
   }
 };
 
+// --- Update own doc without a read-before-write ---
+// (was: ensureUserDoc = extra getDoc on EVERY tap; now: update, and only if
+// the doc doesn't exist yet — merge-create it)
+const safeUpdate = async (uid, data) => {
+  const ref = doc(db, 'users', uid);
+  try {
+    await updateDoc(ref, data);
+  } catch (e) {
+    await setDoc(ref, data, { merge: true });
+  }
+};
+
 // --- Toggle Save ---
 export const toggleSaveMovie = async (uid, movieId, isSaved) => {
   if (!uid) return;
-  await ensureUserDoc(uid);
-  const userDocRef = doc(db, 'users', uid);
-  await updateDoc(userDocRef, {
-    saves: isSaved ? arrayRemove(movieId) : arrayUnion(movieId)
-  });
+  await safeUpdate(uid, { saves: isSaved ? arrayRemove(movieId) : arrayUnion(movieId) });
 };
 
-// --- Mark Watched ---
 // --- Toggle Shared (⭐ adds a movie from MY list to the couple's shared list) ---
 export const toggleSharedMovie = async (uid, movieId, isShared) => {
   if (!uid) return;
-  await ensureUserDoc(uid);
-  const userDocRef = doc(db, 'users', uid);
-  await updateDoc(userDocRef, {
-    shared: isShared ? arrayRemove(movieId) : arrayUnion(movieId)
-  });
+  await safeUpdate(uid, { shared: isShared ? arrayRemove(movieId) : arrayUnion(movieId) });
+};
+
+// --- One-shot reconcile of local-only saves/shared (was: N requests, one per movie) ---
+export const reconcileUserData = async (uid, { saves = [], shared = [] }) => {
+  if (!uid || (saves.length === 0 && shared.length === 0)) return;
+  const data = {};
+  if (saves.length > 0) data.saves = arrayUnion(...saves);
+  if (shared.length > 0) data.shared = arrayUnion(...shared);
+  await safeUpdate(uid, data);
+};
+
+// --- Symmetric partner unlink: clear the partner's pointer to me
+// (only if it actually points at me — we don't touch anything else) ---
+export const unlinkPartner = async (myUid, partnerUid) => {
+  if (!myUid || !partnerUid) return;
+  const snap = await getDoc(doc(db, 'users', partnerUid));
+  if (snap.exists() && snap.data().partnerId === myUid) {
+    await updateDoc(doc(db, 'users', partnerUid), { partnerId: '' });
+  }
 };
 
 // --- Release reminder (sent by /api/cron-reminders via the Telegram bot) ---
 export const addReleaseReminder = async (uid, reminder) => {
   if (!uid || !reminder?.date) return;
-  await ensureUserDoc(uid);
-  const userDocRef = doc(db, 'users', uid);
-  await updateDoc(userDocRef, {
+  await safeUpdate(uid, {
     reminders: arrayUnion({
       id: reminder.id,
       title: reminder.title || '',
@@ -144,8 +186,7 @@ export const addReleaseReminder = async (uid, reminder) => {
 
 export const markMovieWatched = async (uid, movieId) => {
   if (!uid) return;
-  const userDocRef = doc(db, 'users', uid);
-  await updateDoc(userDocRef, {
+  await safeUpdate(uid, {
     watched: arrayUnion(movieId)
   });
 };
@@ -153,9 +194,7 @@ export const markMovieWatched = async (uid, movieId) => {
 // --- Toggle Watched ---
 export const toggleMovieWatched = async (uid, movieId, isWatched) => {
   if (!uid) return;
-  await ensureUserDoc(uid);
-  const userDocRef = doc(db, 'users', uid);
-  await updateDoc(userDocRef, {
+  await safeUpdate(uid, {
     watched: isWatched ? arrayRemove(movieId) : arrayUnion(movieId),
     // Watch → movie leaves the saved list; un-watch → returns to the saved list
     saves: isWatched ? arrayUnion(movieId) : arrayRemove(movieId)

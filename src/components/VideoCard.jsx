@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect, useMemo } from 'react';
+import { useState, useRef, useEffect, useMemo, memo } from 'react';
 import { Heart, Share, Star, CheckCircle2, VolumeX, Volume2, Bell, Play } from 'lucide-react';
+
+const BOT_USERNAME = 'q_moviebot';
 
 // How many px of the YouTube player we crop from top & bottom.
 // YouTube UI (title bar, avatar, "watch on youtube", watermark, controls)
@@ -35,7 +37,7 @@ function openCalendarReminder(movie) {
   window.open(url, '_blank');
 }
 
-export default function VideoCard({
+function VideoCard({
   movie, active, isSaved, onToggleSave,
   isGlobalMuted, setIsGlobalMuted, isFirstVideo, onRemind, preload
 }) {
@@ -179,14 +181,22 @@ export default function VideoCard({
     setIsPlaying(true);
   };
 
+  // Share a deep link into the app (startapp=m_<id>/s_<id>) — the friend opens
+  // the same card in QuickMovie, not a bare YouTube page.
   const handleShare = () => {
-    const url = movie.trailerKey
-      ? `https://www.youtube.com/watch?v=${movie.trailerKey}`
-      : `https://www.themoviedb.org/movie/${movie.id}`;
+    const deepLink = `https://t.me/${BOT_USERNAME}?startapp=${movie.type === 'series' ? 's' : 'm'}_${movie.id}`;
+    const text = `🎬 ${movie.title}`;
+    const wa = window.Telegram?.WebApp;
+    if (typeof wa?.openTelegramLink === 'function') {
+      try {
+        wa.openTelegramLink(`https://t.me/share/url?url=${encodeURIComponent(deepLink)}&text=${encodeURIComponent(text)}`);
+        return;
+      } catch (e) { /* fall through */ }
+    }
     if (navigator.share) {
-      navigator.share({ title: movie.title, text: `Заціни: ${movie.title}`, url }).catch(() => fallbackCopy(url));
+      navigator.share({ title: movie.title, text, url: deepLink }).catch(() => fallbackCopy(deepLink));
     } else {
-      fallbackCopy(url);
+      fallbackCopy(deepLink);
     }
   };
 
@@ -317,14 +327,14 @@ export default function VideoCard({
         <ActionBtn
           icon={<Heart size={24} className={isSaved ? 'fill-white text-white' : 'text-white'} />}
           label={isSaved ? "Додано" : "Зберегти"}
-          onClick={onToggleSave}
+          onClick={() => onToggleSave(movie)}
         />
 
         {upcoming ? (
           <ActionBtn
             icon={<Bell size={22} className="text-white" />}
             label="Нагадати"
-            onClick={() => onRemind ? onRemind(movie) : openCalendarReminder(movie)}
+            onClick={() => { if (!onRemind || onRemind(movie) === false) openCalendarReminder(movie); }}
           />
         ) : (
           <ActionBtn icon={<div className="font-bold text-white text-sm">x{speedState}</div>} label="Швидкість" onClick={handleSpeedChange} />
@@ -368,3 +378,8 @@ export default function VideoCard({
     </div>
   );
 }
+
+// memo: a toast/save in App re-renders the whole feed — without memo that's
+// ~20 iframe cards re-rendering on every ❤. All callback props are stable
+// (useCallback in App), so the default shallow compare works.
+export default memo(VideoCard);

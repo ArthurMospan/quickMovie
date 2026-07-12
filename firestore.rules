@@ -1,0 +1,38 @@
+rules_version = '2';
+
+// QuickMovie Firestore rules.
+// Requires verified auth (uid = tg_<id> via /api/auth custom tokens).
+// Deploy ONLY after /api/auth works — see SECURITY_SETUP.md.
+//
+// What this enforces:
+//  - read: any signed-in user (needed to see the partner's shared list);
+//  - create/update own doc: only with uid == doc id;
+//  - update SOMEONE ELSE'S doc: only the partnerId field, and only
+//    to link it to yourself (accept invite) or to unlink yourself;
+//  - delete: nobody.
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /users/{userId} {
+      allow read: if request.auth != null;
+
+      allow create: if request.auth != null && request.auth.uid == userId;
+
+      allow update: if request.auth != null && (
+        request.auth.uid == userId ||
+        (
+          // Two-way partner linking touches ONLY partnerId on the other doc:
+          request.resource.data.diff(resource.data).affectedKeys().hasOnly(['partnerId']) &&
+          (
+            // accept invite: their partnerId becomes MY uid
+            request.resource.data.partnerId == request.auth.uid ||
+            // symmetric unlink: it pointed at me — I may clear it
+            (resource.data.partnerId == request.auth.uid && request.resource.data.partnerId == '')
+          )
+        )
+      );
+
+      allow delete: if false;
+    }
+  }
+}

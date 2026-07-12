@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Heart, Star, Eye, Check, Users, Film, Trash2, RotateCcw } from 'lucide-react';
-import { getMediaById } from '../services/tmdb';
+import { getMediaByIds } from '../services/tmdb';
 
 const copyToClipboard = (text) => {
   if (navigator.clipboard?.writeText) {
@@ -188,16 +188,12 @@ export default function WishlistView({
       if (missing.length === 0) return;
       setLoading(true);
       try {
-        const results = await Promise.allSettled(
-          missing.map(id => getMediaById(id))
-        );
-        const newCache = { ...moviesCache };
-        results.forEach((result, i) => {
-          if (result.status === 'fulfilled' && result.value) {
-            newCache[missing[i]] = result.value;
-          }
+        // Batched + persistently cached: big lists no longer hammer TMDB
+        // (429 made titles silently vanish); onBatch renders progressively.
+        const fetched = await getMediaByIds(missing, (partial) => {
+          setMoviesCache(prev => ({ ...prev, ...partial }));
         });
-        setMoviesCache(newCache);
+        setMoviesCache(prev => ({ ...prev, ...fetched }));
       } catch (e) {
         console.error(e);
       }
