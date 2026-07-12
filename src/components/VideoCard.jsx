@@ -53,10 +53,14 @@ export default function VideoCard({
   const mutedRef = useRef(isGlobalMuted);
   useEffect(() => { mutedRef.current = isGlobalMuted; }, [isGlobalMuted]);
   const revealTimer = useRef(null);
+  const playingRef = useRef(false); // real player state from YT events
+  const [embedError, setEmbedError] = useState(false);
 
-  const thumbnailUrl = movie.trailerKey
-    ? `https://img.youtube.com/vi/${movie.trailerKey}/maxresdefault.jpg`
-    : (movie.backdrop_path ? `https://image.tmdb.org/t/p/w1280${movie.backdrop_path}` : null);
+  // TMDB backdrop first: YouTube's maxresdefault.jpg often doesn't exist and
+  // renders as the ugly grey "3 dots" placeholder. hqdefault always exists.
+  const thumbnailUrl = movie.backdrop_path
+    ? `https://image.tmdb.org/t/p/w1280${movie.backdrop_path}`
+    : (movie.trailerKey ? `https://img.youtube.com/vi/${movie.trailerKey}/hqdefault.jpg` : null);
 
   const sendCommand = (func, args = []) => {
     try {
@@ -76,14 +80,18 @@ export default function VideoCard({
       return;
     }
     setWarmingUp(true);
+    setEmbedError(false);
+    playingRef.current = false;
     const t1 = setTimeout(() => {
-      sendCommand('playVideo');
+      // Autoplay usually starts by itself; a redundant playVideo on an
+      // already-playing video makes YouTube flash its pause bezel.
+      if (!playingRef.current) sendCommand('playVideo');
       setIsPlaying(true);
       if (!mutedRef.current) sendCommand('unMute');
-    }, 500);
+    }, 900);
     // Reveal is event-driven (onStateChange "playing" below) so YouTube's
     // start-up pause/play bezel stays hidden; this is only a safety fallback.
-    const tWarm = setTimeout(() => setWarmingUp(false), 3200);
+    const tWarm = setTimeout(() => setWarmingUp(false), 3500);
     return () => { clearTimeout(t1); clearTimeout(tWarm); clearTimeout(revealTimer.current); };
   }, [active]);
 
@@ -96,15 +104,25 @@ export default function VideoCard({
       let d;
       try { d = JSON.parse(e.data); } catch (err) { return; }
       const state = d?.event === 'onStateChange' ? d.info : d?.info?.playerState;
+      // Broken / non-embeddable video → show our own fallback, not YT's grey box
+      if (d?.event === 'onError') {
+        setEmbedError(true);
+        setWarmingUp(false);
+        return;
+      }
       // Video ended → restart (manual loop, no end screen)
       if (state === 0) {
+        playingRef.current = false;
         sendCommand('seekTo', [0, true]);
         sendCommand('playVideo');
       }
+      if (state === 2) playingRef.current = false;
       // Actually playing → wait out YouTube's start-up pause bezel, then reveal
       if (state === 1) {
+        playingRef.current = true;
+        setIsPlaying(true);
         clearTimeout(revealTimer.current);
-        revealTimer.current = setTimeout(() => setWarmingUp(false), 800);
+        revealTimer.current = setTimeout(() => setWarmingUp(false), 1200);
       }
     };
     window.addEventListener('message', onMsg);
@@ -202,7 +220,16 @@ export default function VideoCard({
              (top title bar + bottom controls/watermark) is cropped away. */}
       <div className="relative z-10 w-full h-full flex items-center justify-center pointer-events-none">
         <div className="yt-stage">
-          {active ? (
+          {active && embedError ? (
+            <>
+              {thumbnailUrl && (
+                <img src={thumbnailUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
+              )}
+              <div className="absolute inset-0 bg-black/50 flex items-center justify-center">
+                <p className="text-white/70 text-sm font-semibold">Трейлер недоступний — свайпніть далі</p>
+              </div>
+            </>
+          ) : active ? (
             <>
               <iframe
                 ref={iframeRef}
@@ -237,7 +264,7 @@ export default function VideoCard({
       </div>
 
       {/* 3. Bottom Gradient */}
-      <div className="landscape-info absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/90 pointer-events-none z-20"></div>
+      <div className="landscape-hide absolute inset-0 bg-gradient-to-b from-black/20 via-transparent to-black/90 pointer-events-none z-20"></div>
 
       {/* 4. PLAY/PAUSE tap zone — covers the whole card (iframe never gets taps) */}
       {active && (

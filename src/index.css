@@ -158,10 +158,13 @@ html, body {
     --app-top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 56px);
   }
 
-  /* Compact header: search/avatar stay at the screen edges as before */
+  /* Compact header: search/avatar at the edges, but pushed off the iPhone
+     notch/Dynamic Island (safe-area-inset-left/right in landscape). */
   .app-topnav {
     padding-top: calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 10px) !important;
     padding-bottom: 8px !important;
+    padding-left: calc(env(safe-area-inset-left, 0px) + 24px) !important;
+    padding-right: calc(env(safe-area-inset-right, 0px) + 24px) !important;
   }
 
   /* ONLY the Огляд/Watchlist tabs jump to the very top — the same line as
@@ -192,9 +195,28 @@ html, body {
     transform: translateX(-50%);
   }
 
-  /* Title/overview and dark gradient are hidden — clean fullscreen video */
-  .landscape-info {
+  /* Dark bottom gradient is hidden — clean fullscreen video */
+  .landscape-hide {
     display: none !important;
+  }
+
+  /* Movie info moves to the top, under the tabs line, compact & centered */
+  .landscape-info {
+    bottom: auto !important;
+    top: calc(var(--tg-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 44px);
+    left: 96px !important;
+    right: 96px !important;
+    align-items: center;
+    text-align: center;
+  }
+  .landscape-info h2 {
+    font-size: 1.05rem !important;
+    line-height: 1.25 !important;
+  }
+  .landscape-info p {
+    font-size: 0.75rem !important;
+    -webkit-line-clamp: 2 !important;
+    color: rgba(255, 255, 255, 0.75) !important;
   }
 
   /* Filter pill hidden in landscape */
@@ -209,6 +231,7 @@ html, body {
 
   .landscape-filter-btn {
     display: flex !important;
+    left: calc(env(safe-area-inset-left, 0px) + 24px) !important;
   }
 
   /* Watchlist: 3 columns in landscape (width allows) */
