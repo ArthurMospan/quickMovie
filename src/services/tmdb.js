@@ -117,6 +117,11 @@ const lightShuffle = (arr, window = 4) => {
 export const getSmartFeed = async (page = 1, seedIds = []) => {
   const freshFrom = new Date(Date.now() - 730 * 864e5).toISOString().slice(0, 10); // ~2 years back
 
+  // Shuffle which page each source serves: without this, page 1 was almost
+  // identical on every app start (same trending week, same all-time top),
+  // so the seen-memory exhausted it within a couple of sessions.
+  const spice = () => 1 + Math.floor(Math.random() * 5);
+
   // Up to 3 random seeds from the user's saved list → their recommendations
   // get blended into every feed page ("more like what you save").
   const seeds = [...seedIds].sort(() => Math.random() - 0.5).slice(0, 3);
@@ -126,20 +131,20 @@ export const getSmartFeed = async (page = 1, seedIds = []) => {
     fetchFromTMDB('/trending/all/week', { language: 'uk-UA', page }),
     // 2. New & actually good
     fetchFromTMDB('/discover/movie', {
-      language: 'uk-UA', include_adult: false, page,
+      language: 'uk-UA', include_adult: false, page: page - 1 + spice(),
       sort_by: 'popularity.desc',
       'primary_release_date.gte': freshFrom,
       'vote_average.gte': 6.6, 'vote_count.gte': 200
     }),
     // 3. All-time movie masterpieces (older stuff only if truly great)
     fetchFromTMDB('/discover/movie', {
-      language: 'uk-UA', include_adult: false, page,
+      language: 'uk-UA', include_adult: false, page: page - 1 + spice(),
       sort_by: 'vote_average.desc',
       'vote_average.gte': 7.7, 'vote_count.gte': 4000
     }),
     // 4. All-time top series
     fetchFromTMDB('/discover/tv', {
-      language: 'uk-UA', include_adult: false, page,
+      language: 'uk-UA', include_adult: false, page: page - 1 + spice(),
       sort_by: 'vote_average.desc',
       'vote_average.gte': 7.8, 'vote_count.gte': 1500
     }),

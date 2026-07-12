@@ -92,7 +92,7 @@ export default function VideoCard({
     }, 900);
     // Reveal is event-driven (onStateChange "playing" below) so YouTube's
     // start-up pause/play bezel stays hidden; this is only a safety fallback.
-    const tWarm = setTimeout(() => setWarmingUp(false), 4500);
+    const tWarm = setTimeout(() => setWarmingUp(false), 1800);
     return () => { clearTimeout(t1); clearTimeout(tWarm); clearTimeout(revealTimer.current); };
   }, [active]);
 
@@ -123,7 +123,7 @@ export default function VideoCard({
         playingRef.current = true;
         setIsPlaying(true);
         clearTimeout(revealTimer.current);
-        revealTimer.current = setTimeout(() => setWarmingUp(false), 2600);
+        revealTimer.current = setTimeout(() => setWarmingUp(false), 400);
       }
     };
     window.addEventListener('message', onMsg);

@@ -42,7 +42,7 @@ const writeLS = (key, arr) => {
 // --- Seen-trailers memory: a trailer the user already watched is not shown
 // again for SEEN_TTL days (only in the no-filters smart feed). ---
 const LS_SEEN = 'qm_seen';
-const SEEN_TTL_MS = 5 * 864e5; // 5 days
+const SEEN_TTL_MS = 3 * 864e5; // 3 days
 const readSeen = () => {
   try { return JSON.parse(localStorage.getItem(LS_SEEN)) || {}; } catch (e) { return {}; }
 };
