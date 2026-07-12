@@ -383,8 +383,22 @@ export const getMovieById = async (id) => {
   });
 };
 
-// --- Get Media by ID (movie or TV — tries movie first, falls back to TV) ---
-export const getMediaById = async (id) => {
+// --- Get Media by ID ---
+// TMDB movie and TV ids are SEPARATE id spaces (movie/1396 ≠ tv/1396), so
+// saved series use a 'tv_<id>' key. Bare numeric ids (legacy + movies) keep
+// the old behaviour: try movie first, fall back to TV.
+export const getMediaById = async (key) => {
+  const isTvKey = typeof key === 'string' && key.startsWith('tv_');
+  const id = isTvKey ? key.slice(3) : key;
+
+  if (isTvKey) {
+    try {
+      const tv = await fetchFromTMDB(`/tv/${id}`, { language: 'uk-UA' });
+      if (tv && tv.id) return { ...tv, title: tv.name, release_date: tv.first_air_date, media_type: 'tv' };
+    } catch (e) { /* not found */ }
+    return null; // known-type key must NOT fall back to a random movie
+  }
+
   try {
     const movie = await fetchFromTMDB(`/movie/${id}`, { language: 'uk-UA' });
     if (movie && movie.id) return { ...movie, media_type: 'movie' };

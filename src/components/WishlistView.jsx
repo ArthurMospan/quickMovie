@@ -102,14 +102,14 @@ function MovieCard({ movie, variant, isShared, sharedByMe, sharedByPartner, myPh
           {variant === 'mine' && (
             <>
               <button
-                onClick={() => onToggleShared(movie.id)}
+                onClick={() => onToggleShared(movie._key ?? movie.id)}
                 className={`p-2 backdrop-blur-md rounded-full border active:scale-90 transition-transform ${isShared ? 'bg-white text-black border-white' : 'bg-black/50 text-white/70 border-white/10'}`}
                 title={isShared ? 'Прибрати зі Спільних' : 'Додати у Спільні'}
               >
                 <Star size={14} className={isShared ? 'fill-current' : ''} />
               </button>
               <button
-                onClick={() => onToggleWatched(movie.id)}
+                onClick={() => onToggleWatched(movie._key ?? movie.id)}
                 className="p-2 bg-black/50 backdrop-blur-md rounded-full border border-white/10 text-white/60 active:scale-90 transition-transform"
                 title="Позначити переглянутим"
               >
@@ -120,7 +120,7 @@ function MovieCard({ movie, variant, isShared, sharedByMe, sharedByPartner, myPh
 
           {variant === 'shared' && sharedByMe && (
             <button
-              onClick={() => onToggleShared(movie.id)}
+              onClick={() => onToggleShared(movie._key ?? movie.id)}
               className="p-2 bg-white text-black rounded-full active:scale-90 transition-transform shadow-lg"
               title="Прибрати зі Спільних"
             >
@@ -130,7 +130,7 @@ function MovieCard({ movie, variant, isShared, sharedByMe, sharedByPartner, myPh
 
           {variant === 'watched' && (
             <button
-              onClick={() => onToggleWatched(movie.id)}
+              onClick={() => onToggleWatched(movie._key ?? movie.id)}
               className="p-2 bg-black/50 backdrop-blur-md rounded-full text-white border border-white/10 active:scale-90 transition-transform"
               title="Повернути у список"
             >
@@ -142,7 +142,7 @@ function MovieCard({ movie, variant, isShared, sharedByMe, sharedByPartner, myPh
         {/* Delete — bottom-right corner, far from the other actions */}
         {variant === 'mine' && (
           <button
-            onClick={() => onToggleSave(movie.id)}
+            onClick={() => onToggleSave(movie._key ?? movie.id)}
             className="absolute bottom-2 right-2 p-2 bg-black/50 backdrop-blur-md rounded-full text-white/60 border border-white/10 active:scale-90 transition-transform"
             title="Прибрати зі списку"
           >
@@ -207,9 +207,13 @@ export default function WishlistView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [allIds]);
 
-  const myItems = useMemo(() => mySaves.map(id => moviesCache[id]).filter(Boolean), [mySaves, moviesCache]);
-  const watchedItems = useMemo(() => watched.map(id => moviesCache[id]).filter(Boolean), [watched, moviesCache]);
-  const sharedItems = useMemo(() => sharedIds.map(id => moviesCache[id]).filter(Boolean), [sharedIds, moviesCache]);
+  // Each item carries its storage key (_key): series are stored as 'tv_<id>',
+  // movies as a bare id. All toggles must use _key, NOT movie.id — otherwise
+  // toggling a series would create/remove a bare id that resolves to a movie.
+  const withKey = (id) => (moviesCache[id] ? { ...moviesCache[id], _key: id } : null);
+  const myItems = useMemo(() => mySaves.map(withKey).filter(Boolean), [mySaves, moviesCache]);
+  const watchedItems = useMemo(() => watched.map(withKey).filter(Boolean), [watched, moviesCache]);
+  const sharedItems = useMemo(() => sharedIds.map(withKey).filter(Boolean), [sharedIds, moviesCache]);
 
   const partnerName = partnerProfile?.name || null;
 
@@ -255,8 +259,8 @@ export default function WishlistView({
             <div className="wl-grid grid grid-cols-2 gap-3">
               {myItems.map(movie => (
                 <MovieCard
-                  key={movie.id} movie={movie} variant="mine"
-                  isShared={myShared?.includes(movie.id)}
+                  key={movie._key} movie={movie} variant="mine"
+                  isShared={myShared?.includes(movie._key)}
                   onToggleSave={onToggleSave} onToggleWatched={onToggleWatched} onToggleShared={onToggleShared}
                   notify={notify}
                 />
@@ -303,9 +307,9 @@ export default function WishlistView({
             <div className="wl-grid grid grid-cols-2 gap-3">
               {sharedItems.map(movie => (
                 <MovieCard
-                  key={movie.id} movie={movie} variant="shared"
-                  sharedByMe={myShared?.includes(movie.id)}
-                  sharedByPartner={partnerShared?.includes(movie.id)}
+                  key={movie._key} movie={movie} variant="shared"
+                  sharedByMe={myShared?.includes(movie._key)}
+                  sharedByPartner={partnerShared?.includes(movie._key)}
                   myPhoto={myPhoto}
                   partnerPhoto={partnerProfile?.photo}
                   partnerName={partnerName}
@@ -329,7 +333,7 @@ export default function WishlistView({
             <div className="wl-grid grid grid-cols-2 gap-3">
               {watchedItems.map(movie => (
                 <MovieCard
-                  key={movie.id} movie={movie} variant="watched"
+                  key={movie._key} movie={movie} variant="watched"
                   onToggleSave={onToggleSave} onToggleWatched={onToggleWatched} onToggleShared={onToggleShared}
                   notify={notify}
                 />

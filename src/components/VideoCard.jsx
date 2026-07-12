@@ -94,10 +94,10 @@ export default function VideoCard({
       sendCommand('playVideo');
       if (!mutedRef.current) sendCommand('unMute');
     };
-    const t0 = setTimeout(kick, 250);
-    const t1 = setTimeout(kick, 1300);
+    const t0 = setTimeout(kick, 100);
+    const t1 = setTimeout(kick, 900);
     // Reveal is event-driven (onStateChange "playing" below); safety fallback:
-    const tWarm = setTimeout(() => setWarmingUp(false), 2500);
+    const tWarm = setTimeout(() => setWarmingUp(false), 1800);
     return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(tWarm); clearTimeout(revealTimer.current); };
   }, [active]);
 
@@ -128,7 +128,7 @@ export default function VideoCard({
         playingRef.current = true;
         setIsPlaying(true);
         clearTimeout(revealTimer.current);
-        revealTimer.current = setTimeout(() => setWarmingUp(false), 400);
+        revealTimer.current = setTimeout(() => setWarmingUp(false), 250);
       }
     };
     window.addEventListener('message', onMsg);
@@ -253,7 +253,7 @@ export default function VideoCard({
               ></iframe>
               {/* Warm-up cover: fully hides the player while start-up commands fire
                   (and the whole player while the card is only preloading) */}
-              <div className={`absolute inset-0 z-[8] bg-black transition-opacity duration-500 ${(warmingUp || !active) ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+              <div className={`absolute inset-0 z-[8] bg-black transition-opacity duration-300 ${(warmingUp || !active) ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                 {thumbnailUrl && (
                   <img src={thumbnailUrl} alt="" className="w-full h-full object-cover" />
                 )}
@@ -311,7 +311,9 @@ export default function VideoCard({
       )}
 
       {/* Right Actions (portrait: right column; landscape: bottom row via CSS) */}
-      <div className={`landscape-actions absolute right-3 bottom-20 flex flex-col items-center gap-4 z-30 pointer-events-auto transition-opacity duration-300 ${active ? 'opacity-100' : 'opacity-0'}`}>
+      {/* pointer-events-none when inactive: invisible buttons of neighbour cards
+          must NOT catch taps mid-swipe (could save a different movie) */}
+      <div className={`landscape-actions absolute right-3 bottom-20 flex flex-col items-center gap-4 z-30 transition-opacity duration-300 ${active ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
         <ActionBtn
           icon={<Heart size={24} className={isSaved ? 'fill-white text-white' : 'text-white'} />}
           label={isSaved ? "Додано" : "Зберегти"}

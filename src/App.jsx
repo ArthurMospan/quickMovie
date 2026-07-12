@@ -39,6 +39,13 @@ const writeLS = (key, arr) => {
   try { localStorage.setItem(key, JSON.stringify(arr)); } catch (e) { /* full */ }
 };
 
+// --- Media key for saves/watched/shared/seen ---
+// TMDB movie and TV ids are SEPARATE id spaces (movie/1396 ≠ tv/1396).
+// Movies keep the bare numeric id (backward compatible with old saves),
+// series are stored as 'tv_<id>' so the wishlist can't resolve them as a
+// totally different movie with the same number.
+const mediaKey = (m) => (m.type === 'series' ? `tv_${m.id}` : m.id);
+
 // --- Seen-trailers memory: a trailer the user already watched is not shown
 // again for SEEN_TTL days (only in the no-filters smart feed). ---
 const LS_SEEN = 'qm_seen';
@@ -109,6 +116,7 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const containerRef = useRef(null);
   const isFetching = useRef(false);
+  const loadSeq = useRef(0); // bumped on every reset — stale fetches discard themselves
   const feedScrollPos = useRef(0);
 
   // --- Telegram User & Data (local-first: starts from localStorage) ---
@@ -172,6 +180,22 @@ export default function App() {
         console.log('No Telegram user found. App running in local mode.');
         return;
       }
+
+      // Guard: another Telegram account was used on this device before.
+      // localStorage is shared per-bot across accounts, so the previous
+      // owner's local saves would otherwise be reconciled INTO this
+      // account's cloud list ("movies I never added").
+      const prevOwner = localStorage.getItem('qm_owner');
+      if (prevOwner && prevOwner !== tgUser.uid) {
+        writeLS(LS_SAVES, []);
+        writeLS(LS_WATCHED, []);
+        writeLS(LS_SHARED, []);
+        localStorage.removeItem('qw_partner_id');
+        localStorage.removeItem(LS_SEEN);
+        setUserData({ saves: [], watched: [], shared: [], partnerId: '' });
+      }
+      localStorage.setItem('qm_owner', tgUser.uid);
+
       setUser(tgUser);
       await ensureUserDoc(tgUser.uid);
       saveUserProfile(tgUser); // so the partner sees who they're connected with
@@ -270,7 +294,11 @@ export default function App() {
     filters.minRating > 0 || filters.personId || filters.yearFrom || filters.yearTo || filters.type !== 'all';
 
   const loadMovies = useCallback(async (pageNum = 1, reset = false) => {
-    if (isFetching.current) return;
+    // Race guard: a filter change (reset) must cancel any in-flight load,
+    // otherwise the old fetch finishes AFTER the feed was cleared and fills
+    // it with movies that don't match the new filters.
+    if (isFetching.current && !reset) return;
+    const seq = reset ? ++loadSeq.current : loadSeq.current;
     setLoading(true);
     isFetching.current = true;
 
@@ -300,11 +328,14 @@ export default function App() {
       if (!data.results || data.results.length === 0) break;
 
       for (const m of data.results) {
-        if (watched.includes(m.id)) continue;
-        // Recently seen trailers are skipped in the smart feed (not in search-like filters)
-        if (!hasActiveFilters && !ignoreSeen && isSeenRecently(m.id)) continue;
-
         const isTV = m.media_type === 'tv' || (!m.title && m.name) || m.first_air_date;
+        const key = isTV ? `tv_${m.id}` : m.id;
+        // TMDB pagination can repeat a title across pages within one batch —
+        // duplicates would produce duplicate React keys (undefined behaviour)
+        if (validMovies.some(v => v.id === m.id && v.type === (isTV ? 'series' : 'movie'))) continue;
+        if (watched.includes(key)) continue;
+        // Recently seen trailers are skipped in the smart feed (not in search-like filters)
+        if (!hasActiveFilters && !ignoreSeen && isSeenRecently(key)) continue;
 
         try {
           const details = isTV
@@ -336,18 +367,24 @@ export default function App() {
       }
       }
 
+      // Stale fetch (filters changed mid-flight) → throw the results away
+      if (seq !== loadSeq.current) return;
+
       setMovies(prev => {
         if (reset) return validMovies;
-        const currentIds = new Set(prev.map(p => p.id));
-        const newItems = validMovies.filter(v => !currentIds.has(v.id));
+        // Dedupe by type+id — movie and TV ids collide across types
+        const currentKeys = new Set(prev.map(p => `${p.type}_${p.id}`));
+        const newItems = validMovies.filter(v => !currentKeys.has(`${v.type}_${v.id}`));
         return [...prev, ...newItems];
       });
       setPage(cursor);
     } catch (e) {
       console.error("Failed to load movies:", e);
     } finally {
-      setLoading(false);
-      isFetching.current = false;
+      if (seq === loadSeq.current) {
+        setLoading(false);
+        isFetching.current = false;
+      }
     }
   }, [filters, hasActiveFilters, userData?.watched, userData?.saves]);
 
@@ -477,7 +514,7 @@ export default function App() {
 
   // --- Watch Trailer from AI Search ---
   const handleWatchTrailer = (movie) => {
-    setMovies(prev => [movie, ...prev.filter(m => m.id !== movie.id)]);
+    setMovies(prev => [movie, ...prev.filter(m => !(m.id === movie.id && m.type === movie.type))]);
     setActiveIndex(0);
     setActiveTab('feed');
     feedScrollPos.current = 0;
@@ -498,7 +535,7 @@ export default function App() {
   useEffect(() => {
     if (activeTab !== 'feed') return;
     const current = feedMovies[activeIndex];
-    if (current) markSeen(current.id);
+    if (current) markSeen(mediaKey(current));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeIndex, activeTab, feedMovies.length]);
 
@@ -547,13 +584,13 @@ export default function App() {
                 key={`${movie.type}_${movie.id}`}
                 movie={movie}
                 active={activeTab === 'feed' && index === activeIndex}
-                isSaved={userData.saves?.includes(movie.id)}
-                onToggleSave={() => handleToggleSave(movie.id)}
+                isSaved={userData.saves?.includes(mediaKey(movie))}
+                onToggleSave={() => handleToggleSave(mediaKey(movie))}
                 isGlobalMuted={isGlobalMuted}
                 setIsGlobalMuted={setIsGlobalMuted}
                 isFirstVideo={index === 0}
                 onRemind={handleRemind}
-                preload={index === activeIndex + 1}
+                preload={index === activeIndex + 1 || index === activeIndex + 2 || index === activeIndex - 1}
               />
             ))}
 
