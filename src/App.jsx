@@ -26,7 +26,7 @@ import {
   updateUserPartnerId,
   addReleaseReminder
 } from './services/firebase';
-import { SlidersHorizontal, Film, Play } from 'lucide-react';
+import { SlidersHorizontal, Film } from 'lucide-react';
 
 // --- Local-first storage keys (saves work even without Firebase) ---
 const LS_SAVES = 'qm_saves';
@@ -101,13 +101,6 @@ function getFilterSummary(filters, genreMap) {
 export default function App() {
   // --- Tab State ---
   const [activeTab, setActiveTab] = useState('feed');
-
-  // --- Welcome Screen ---
-  // Inside Telegram the bot already shows a native splash with a start button,
-  // so we skip the in-app welcome there and go straight to the feed.
-  const [showWelcome, setShowWelcome] = useState(() =>
-    !localStorage.getItem('qm_welcomed') && !window.Telegram?.WebApp?.initDataUnsafe?.user
-  );
 
   // --- Feed State ---
   const [movies, setMovies] = useState([]);
@@ -351,13 +344,12 @@ export default function App() {
 
   // --- Initial Load / filter change ---
   useEffect(() => {
-    if (showWelcome) return;
     setMovies([]);
     setPage(1);
     setActiveIndex(0);
     loadMovies(1, true);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, showWelcome]);
+  }, [filters]);
 
   // --- Save/restore scroll when switching tabs ---
   useEffect(() => {
@@ -490,12 +482,6 @@ export default function App() {
     setFilters(newFilters);
   };
 
-  // --- Welcome dismiss ---
-  const handleDismissWelcome = () => {
-    setShowWelcome(false);
-    localStorage.setItem('qm_welcomed', '1');
-  };
-
   // --- Filtered movies for feed ---
   const feedMovies = movies.filter(m => m.trailerKey);
 
@@ -527,47 +513,6 @@ export default function App() {
   // --- Filter summary text ---
   const filterSummary = getFilterSummary(filters, genreMap);
   const hasFilters = filterSummary.length > 0;
-
-  // =================== WELCOME SCREEN ===================
-  if (showWelcome) {
-    return (
-      <div className="min-h-[100dvh] bg-black text-white flex flex-col items-center justify-center p-8 relative overflow-hidden">
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 w-[300px] h-[300px] bg-purple-600/20 rounded-full blur-[120px]"></div>
-          <div className="absolute bottom-1/3 left-1/3 w-[200px] h-[200px] bg-blue-500/15 rounded-full blur-[100px]"></div>
-        </div>
-
-        <div className="relative z-10 flex flex-col items-center animate-in">
-          <img src="/logo.png" alt="QuickMovie" className="w-24 h-24 rounded-3xl mb-6 shadow-2xl" />
-
-          <h1 className="text-3xl font-bold mb-2 tracking-tight">QuickMovie</h1>
-          <p className="text-white/50 text-sm mb-8 text-center max-w-[260px] leading-relaxed">
-            Свайпай трейлери як TikTok. Зберігай. Дивись разом з друзями.
-          </p>
-
-          <div className="space-y-3 mb-10 w-full max-w-[280px]">
-            {[
-              { emoji: '🎬', text: 'Трейлери фільмів та серіалів' },
-              { emoji: '🤖', text: 'ШІ знайде фільм за описом' },
-              { emoji: '⭐', text: 'Спільний вотчліст з друзями' },
-            ].map((item, i) => (
-              <div key={i} className="flex items-center gap-3 bg-white/5 border border-white/10 rounded-xl px-4 py-3">
-                <span className="text-lg">{item.emoji}</span>
-                <span className="text-sm text-white/80 font-medium">{item.text}</span>
-              </div>
-            ))}
-          </div>
-
-          <button
-            onClick={handleDismissWelcome}
-            className="w-full max-w-[280px] bg-white text-black font-bold py-4 rounded-2xl text-base active:scale-95 transition-all flex items-center justify-center gap-2 shadow-[0_0_40px_rgba(255,255,255,0.15)]"
-          >
-            <Play size={18} fill="black" /> Почати пошук
-          </button>
-        </div>
-      </div>
-    );
-  }
 
   // =================== MAIN APP ===================
   return (

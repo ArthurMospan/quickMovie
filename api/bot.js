@@ -55,3 +55,5 @@ export default async function handler(req, res) {
   }
 
   // Always 200 so Telegram doesn't retry-flood the endpoint
+  return res.status(200).json({ ok: true });
+}
