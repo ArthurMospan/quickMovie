@@ -553,6 +553,7 @@ export default function App() {
                 setIsGlobalMuted={setIsGlobalMuted}
                 isFirstVideo={index === 0}
                 onRemind={handleRemind}
+                preload={index === activeIndex + 1}
               />
             ))}
 

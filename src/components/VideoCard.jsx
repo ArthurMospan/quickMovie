@@ -37,7 +37,7 @@ function openCalendarReminder(movie) {
 
 export default function VideoCard({
   movie, active, isSaved, onToggleSave,
-  isGlobalMuted, setIsGlobalMuted, isFirstVideo, onRemind
+  isGlobalMuted, setIsGlobalMuted, isFirstVideo, onRemind, preload
 }) {
   const iframeRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -77,23 +77,28 @@ export default function VideoCard({
   useEffect(() => {
     if (!active) {
       setIsPlaying(false);
+      // The iframe may stay mounted as a preload for the neighbour card —
+      // make sure it doesn't keep playing in the background.
+      sendCommand('pauseVideo');
+      playingRef.current = false;
       return;
     }
     setWarmingUp(true);
     setEmbedError(false);
     playingRef.current = false;
-    setIsPlaying(true); // optimistic: autoplay starts by itself; events correct this
-    const t1 = setTimeout(() => {
-      // Autoplay usually starts by itself; a redundant playVideo on an
-      // already-playing video makes YouTube flash its pause bezel.
-      if (!playingRef.current) sendCommand('playVideo');
-      setIsPlaying(true);
+    setIsPlaying(true); // optimistic; events correct this
+    // The player is (usually) already preloaded with autoplay=0 → start fast,
+    // retry once in case the iframe wasn't ready yet.
+    const kick = () => {
+      if (playingRef.current) return;
+      sendCommand('playVideo');
       if (!mutedRef.current) sendCommand('unMute');
-    }, 900);
-    // Reveal is event-driven (onStateChange "playing" below) so YouTube's
-    // start-up pause/play bezel stays hidden; this is only a safety fallback.
-    const tWarm = setTimeout(() => setWarmingUp(false), 1800);
-    return () => { clearTimeout(t1); clearTimeout(tWarm); clearTimeout(revealTimer.current); };
+    };
+    const t0 = setTimeout(kick, 250);
+    const t1 = setTimeout(kick, 1300);
+    // Reveal is event-driven (onStateChange "playing" below); safety fallback:
+    const tWarm = setTimeout(() => setWarmingUp(false), 2500);
+    return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(tWarm); clearTimeout(revealTimer.current); };
   }, [active]);
 
   // Loop via JS API instead of loop=1&playlist=... — playlist mode is what
@@ -136,6 +141,10 @@ export default function VideoCard({
       iframeRef.current?.contentWindow?.postMessage(
         JSON.stringify({ event: 'listening', id: movie.trailerKey, channel: 'widget' }), '*'
       );
+      if (active) {
+        sendCommand('playVideo');
+        if (!mutedRef.current) sendCommand('unMute');
+      }
     } catch (e) { /* not ready */ }
   };
 
@@ -221,7 +230,7 @@ export default function VideoCard({
              (top title bar + bottom controls/watermark) is cropped away. */}
       <div className="relative z-10 w-full h-full flex items-center justify-center pointer-events-none">
         <div className="yt-stage">
-          {active && embedError ? (
+          {(active || preload) && embedError ? (
             <>
               {thumbnailUrl && (
                 <img src={thumbnailUrl} alt="" className="absolute inset-0 w-full h-full object-cover" />
@@ -230,20 +239,21 @@ export default function VideoCard({
                 <p className="text-white/70 text-sm font-semibold">Трейлер недоступний — свайпніть далі</p>
               </div>
             </>
-          ) : active ? (
+          ) : (active || preload) ? (
             <>
               <iframe
                 ref={iframeRef}
                 onLoad={handleIframeLoad}
                 className="absolute left-0 w-full"
                 style={{ top: `-${YT_CROP}px`, height: `calc(100% + ${YT_CROP * 2}px)` }}
-                src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=1&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&enablejsapi=1&disablekb=1&fs=0&iv_load_policy=3&cc_load_policy=0&origin=${encodeURIComponent(window.location.origin)}`}
+                src={`https://www.youtube.com/embed/${movie.trailerKey}?autoplay=0&mute=1&controls=0&modestbranding=1&rel=0&playsinline=1&enablejsapi=1&disablekb=1&fs=0&iv_load_policy=3&cc_load_policy=0&origin=${encodeURIComponent(window.location.origin)}`}
                 frameBorder="0"
                 allow="autoplay; encrypted-media; picture-in-picture; accelerometer; gyroscope"
                 title={movie.title}
               ></iframe>
-              {/* Warm-up cover: fully hides the player while start-up commands fire */}
-              <div className={`absolute inset-0 z-[8] bg-black transition-opacity duration-500 ${warmingUp ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
+              {/* Warm-up cover: fully hides the player while start-up commands fire
+                  (and the whole player while the card is only preloading) */}
+              <div className={`absolute inset-0 z-[8] bg-black transition-opacity duration-500 ${(warmingUp || !active) ? 'opacity-100' : 'opacity-0 pointer-events-none'}`}>
                 {thumbnailUrl && (
                   <img src={thumbnailUrl} alt="" className="w-full h-full object-cover" />
                 )}
