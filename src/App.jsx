@@ -714,7 +714,7 @@ export default function App() {
                 everUnmuted={everUnmuted}
                 notify={showToast}
                 onRemind={handleRemind}
-                preload={index === activeIndex + 1 || index === activeIndex + 2 || index === activeIndex - 1}
+                preload={index === activeIndex + 1}
               />
             ))}
 
