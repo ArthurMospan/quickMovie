@@ -82,6 +82,12 @@ const tombSet = (list) => new Set(Object.keys(readTomb()[list] || {}));
 // series are stored as 'tv_<id>' so the wishlist can't resolve them as a
 // totally different movie with the same number.
 const mediaKey = (m) => (m.type === 'series' ? `tv_${m.id}` : m.id);
+
+// Порожні фільтри (одне джерело істини для reset і для скидання при відкритті трейлера)
+const DEFAULT_FILTERS = {
+  type: 'all', genreIds: [], countries: [], minRating: 0,
+  personId: null, personName: '', yearFrom: null, yearTo: null, upcoming: false
+};
 // Toggles accept either a movie object (feed) or a ready storage key (wishlist)
 const keyOf = (arg) => (typeof arg === 'object' && arg !== null ? mediaKey(arg) : arg);
 
@@ -126,6 +132,7 @@ const COUNTRY_NAMES = {
 // Generate short filter description (multi-select aware)
 function getFilterSummary(filters, genreMap) {
   const parts = [];
+  if (filters.upcoming) parts.push('Майбутні');
   if (filters.type === 'movie') parts.push('Фільми');
   if (filters.type === 'series') parts.push('Серіали');
 
@@ -300,16 +307,7 @@ export default function App() {
   const [genreMap, setGenreMap] = useState({});
 
   // --- Filters (multi-select) ---
-  const [filters, setFilters] = useState({
-    type: 'all',
-    genreIds: [],
-    countries: [],
-    minRating: 0,
-    personId: null,
-    personName: '',
-    yearFrom: null,
-    yearTo: null
-  });
+  const [filters, setFilters] = useState(DEFAULT_FILTERS);
 
   // Load genre map
   useEffect(() => {
@@ -470,7 +468,8 @@ export default function App() {
 
   // --- Load Movies (smart feed when no filters, discover otherwise) ---
   const hasActiveFilters = (filters.genreIds?.length > 0) || (filters.countries?.length > 0) ||
-    filters.minRating > 0 || filters.personId || filters.yearFrom || filters.yearTo || filters.type !== 'all';
+    filters.minRating > 0 || filters.personId || filters.yearFrom || filters.yearTo ||
+    filters.type !== 'all' || filters.upcoming;
 
   const loadMovies = useCallback(async (pageNum = 1, reset = false) => {
     // Race guard: a filter change (reset) must cancel any in-flight load,
@@ -501,6 +500,7 @@ export default function App() {
             personId: filters.personId,
             yearFrom: filters.yearFrom,
             yearTo: filters.yearTo,
+            upcoming: filters.upcoming,
             page: cursor
           })
         : await getSmartFeed(cursor, userData?.saves || []);
@@ -688,14 +688,28 @@ export default function App() {
       });
       showToast('Повернуто у список ❤');
     } else {
-      // бачив → переїжджає зі збережених у переглянуті
+      // бачив → переїжджає зі збережених ТА зі спільних у переглянуті
       addTomb('saves', movieId);
       clearTomb('watched', movieId);
+      const wasShared = cur.shared?.includes(movieId);
+      if (wasShared) addTomb('shared', movieId);
       applyLocal({
         watched: [...(cur.watched || []), movieId],
-        saves: (cur.saves || []).filter(id => id !== movieId)
+        saves: (cur.saves || []).filter(id => id !== movieId),
+        shared: (cur.shared || []).filter(id => id !== movieId)
       });
       showToast('Позначено як переглянуте ✓');
+
+      const u = userRef.current;
+      if (u) {
+        try {
+          await toggleMovieWatched(u.uid, movieId, isWatched);
+          if (wasShared) await removeUserData(u.uid, { shared: [movieId] });
+        } catch (e) {
+          console.error("Watched sync error:", e);
+        }
+      }
+      return;
     }
 
     const u = userRef.current;
@@ -772,6 +786,15 @@ export default function App() {
     if (containerRef.current) {
       containerRef.current.scrollTo({ top: 0, behavior: 'instant' });
     }
+    // Активні фільтри могли б виключити саме цей фільм із фіду → скидаємо їх,
+    // щоб обраний трейлер точно показався (pinnedRef тримає його зверху).
+    // Якщо фільтрів немає — повертаємо той самий обʼєкт, щоб не перезбирати фід.
+    setFilters(prev => {
+      const active = (prev.genreIds?.length > 0) || (prev.countries?.length > 0) ||
+        prev.minRating > 0 || prev.personId || prev.yearFrom || prev.yearTo ||
+        prev.type !== 'all' || prev.upcoming;
+      return active ? DEFAULT_FILTERS : prev;
+    });
   }, []);
 
   // --- Deep link (startapp=m_<id> / s_<id>) → open that title's card on top of the feed ---

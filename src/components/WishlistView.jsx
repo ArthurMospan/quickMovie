@@ -238,7 +238,11 @@ export default function WishlistView({
   // для показу розвертаємо: останні додані першими.
   const myItems = useMemo(() => [...mySaves].reverse().map(withKey).filter(Boolean), [mySaves, moviesCache]);
   const watchedItems = useMemo(() => [...watched].reverse().map(withKey).filter(Boolean), [watched, moviesCache]);
-  const sharedItems = useMemo(() => [...sharedIds].reverse().map(withKey).filter(Boolean), [sharedIds, moviesCache]);
+  // Переглянуте зникає зі «Спільних» і живе лише у «Бачив»
+  const sharedItems = useMemo(
+    () => [...sharedIds].filter(id => !watched?.includes(id)).reverse().map(withKey).filter(Boolean),
+    [sharedIds, watched, moviesCache]
+  );
 
   const partnerName = partnerProfile?.name || null;
 

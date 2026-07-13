@@ -254,7 +254,7 @@ export const getPersonMedia = async ({ personId, type = 'all', genreIds = [], mi
 // --- Discover with Filters (with fallback logic) ---
 // Multi-select: genreIds[] and countries[] are OR-combined via TMDB's "|" syntax.
 // When type='all', fetches BOTH movies and TV and merges them for maximum variety.
-export const discoverWithFilters = async ({ type = 'movie', genreIds = [], countries = [], minRating, personId, yearFrom, yearTo, page = 1 }) => {
+export const discoverWithFilters = async ({ type = 'movie', genreIds = [], countries = [], minRating, personId, yearFrom, yearTo, upcoming = false, page = 1 }) => {
 
   // Person selected → use their REAL filmography (discover can't do this for TV,
   // and with type='all' it used to mix in completely unrelated series).
@@ -265,8 +265,8 @@ export const discoverWithFilters = async ({ type = 'movie', genreIds = [], count
   // If type is 'all', fetch both movies and TV in parallel and merge results
   if (type === 'all') {
     const [movieData, tvData] = await Promise.all([
-      discoverWithFilters({ type: 'movie', genreIds, countries, minRating, yearFrom, yearTo, page }),
-      discoverWithFilters({ type: 'series', genreIds, countries, minRating, yearFrom, yearTo, page })
+      discoverWithFilters({ type: 'movie', genreIds, countries, minRating, yearFrom, yearTo, upcoming, page }),
+      discoverWithFilters({ type: 'series', genreIds, countries, minRating, yearFrom, yearTo, upcoming, page })
     ]);
 
     // Interleave results for variety: movie, tv, movie, tv...
@@ -289,6 +289,9 @@ export const discoverWithFilters = async ({ type = 'movie', genreIds = [], count
 
   const endpoint = type === 'series' ? '/discover/tv' : '/discover/movie';
 
+  const dateGte = type === 'series' ? 'first_air_date.gte' : 'primary_release_date.gte';
+  const dateLte = type === 'series' ? 'first_air_date.lte' : 'primary_release_date.lte';
+
   const buildParams = (opts = {}) => {
     const params = {
       sort_by: 'popularity.desc',
@@ -302,15 +305,19 @@ export const discoverWithFilters = async ({ type = 'movie', genreIds = [], count
     if (countries && countries.length > 0) params.with_origin_country = countries.join('|'); // OR
     if (minRating && minRating > 0) params['vote_average.gte'] = minRating;
 
+    // «Майбутні»: лише ще не вийшли — від сьогодні і далі, найближчі спершу.
+    // Неопубліковані ще не мають голосів, тому знімаємо поріг vote_count.
+    if (upcoming) {
+      const today = new Date().toISOString().slice(0, 10);
+      params[dateGte] = today;
+      params.sort_by = type === 'series' ? 'first_air_date.asc' : 'primary_release_date.asc';
+      delete params['vote_count.gte'];
+      return params; // рік ігноруємо — «майбутні» самі задають діапазон дат
+    }
+
     if (!opts.skipYear) {
-      if (yearFrom) {
-        const dateKey = type === 'series' ? 'first_air_date.gte' : 'primary_release_date.gte';
-        params[dateKey] = `${yearFrom}-01-01`;
-      }
-      if (yearTo) {
-        const dateKey = type === 'series' ? 'first_air_date.lte' : 'primary_release_date.lte';
-        params[dateKey] = `${yearTo}-12-31`;
-      }
+      if (yearFrom) params[dateGte] = `${yearFrom}-01-01`;
+      if (yearTo) params[dateLte] = `${yearTo}-12-31`;
     }
 
     return params;

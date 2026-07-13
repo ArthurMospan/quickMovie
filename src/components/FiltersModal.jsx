@@ -5,6 +5,7 @@ import { getGenreList } from '../services/tmdb';
 const CURRENT_YEAR = new Date().getFullYear();
 
 const YEAR_PRESETS = [
+  { label: String(CURRENT_YEAR), from: CURRENT_YEAR, to: CURRENT_YEAR },
   { label: '2020s', from: 2020, to: CURRENT_YEAR },
   { label: '2010s', from: 2010, to: 2019 },
   { label: '2000s', from: 2000, to: 2009 },
@@ -42,7 +43,8 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
     personId: filters.personId || null,
     personName: filters.personName || '',
     yearFrom: filters.yearFrom || null,
-    yearTo: filters.yearTo || null
+    yearTo: filters.yearTo || null,
+    upcoming: filters.upcoming || false
   });
 
   // Multi-select year presets → merged into one min..max range
@@ -59,6 +61,7 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
     const chosen = YEAR_PRESETS.filter(p => labels.includes(p.label));
     setLocal(prev => ({
       ...prev,
+      upcoming: false, // вибір року вимикає «майбутні»
       yearFrom: Math.min(...chosen.map(p => p.from)),
       yearTo: Math.max(...chosen.map(p => p.to))
     }));
@@ -167,7 +170,16 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
   };
 
   const handleReset = () => {
-    setLocal({ type: 'all', genreIds: [], countries: [], minRating: 0, personId: null, personName: '', yearFrom: null, yearTo: null });
+    setLocal({ type: 'all', genreIds: [], countries: [], minRating: 0, personId: null, personName: '', yearFrom: null, yearTo: null, upcoming: false });
+    setYearPresets([]);
+  };
+
+  // «Майбутні» і конкретний рік — взаємовиключні: увімкнув майбутні → рік скидаємо
+  const toggleUpcoming = () => {
+    setLocal(prev => {
+      const next = !prev.upcoming;
+      return { ...prev, upcoming: next, ...(next ? { yearFrom: null, yearTo: null } : {}) };
+    });
     setYearPresets([]);
   };
 
@@ -184,7 +196,8 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
 
   const activeCount = local.genreIds.length + local.countries.length +
     (local.minRating > 0 ? 1 : 0) +
-    (local.yearFrom || local.yearTo ? 1 : 0) + (local.type !== 'all' ? 1 : 0);
+    (local.yearFrom || local.yearTo ? 1 : 0) + (local.type !== 'all' ? 1 : 0) +
+    (local.upcoming ? 1 : 0);
 
   const sheetStyle = {
     transform: isClosing
@@ -238,8 +251,16 @@ export default function FiltersModal({ onClose, filters, setFilters }) {
             </div>
           </div>
 
-          {/* Year Range — multi-select presets merge into one range */}
+          {/* Upcoming — лише ще не вийшли (нові трейлери) */}
           <div>
+            <p className="text-xs font-bold text-white/50 uppercase tracking-widest mb-3">Прем'єри</p>
+            <Pill active={local.upcoming} onClick={toggleUpcoming}>
+              🍿 Майбутні — лише нові трейлери
+            </Pill>
+          </div>
+
+          {/* Year Range — multi-select presets merge into one range */}
+          <div className={local.upcoming ? 'opacity-40 pointer-events-none' : ''}>
             <p className="text-xs font-bold text-white/50 uppercase tracking-widest mb-3">Рік випуску <span className="text-white/25 normal-case tracking-normal">· можна кілька</span></p>
 
             <div className="flex flex-wrap gap-2 mb-3">
