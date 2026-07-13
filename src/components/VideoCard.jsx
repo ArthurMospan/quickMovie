@@ -59,6 +59,14 @@ function VideoCard({
   const playingRef = useRef(false); // real player state from YT events
   const [embedError, setEmbedError] = useState(false);
 
+  // --- Прогрес-смуга (як у TikTok): позиція відтворення + перемотка ---
+  const [progress, setProgress] = useState(0); // 0..1
+  const [curTime, setCurTime] = useState(0);
+  const [scrubbing, setScrubbing] = useState(false);
+  const durationRef = useRef(0);
+  const scrubbingRef = useRef(false);
+  const barRef = useRef(null);
+
   // TMDB backdrop first: YouTube's maxresdefault.jpg often doesn't exist and
   // renders as the ugly grey "3 dots" placeholder. hqdefault always exists.
   const thumbnailUrl = movie.backdrop_path
@@ -98,6 +106,7 @@ function VideoCard({
   useEffect(() => {
     if (!active) {
       setIsPlaying(false);
+      setProgress(0); setCurTime(0); durationRef.current = 0; scrubbingRef.current = false;
       // The iframe may stay mounted as a preload for the neighbour card —
       // make sure it doesn't keep playing in the background.
       sendCommand('pauseVideo');
@@ -134,6 +143,14 @@ function VideoCard({
       let d;
       try { d = JSON.parse(e.data); } catch (err) { return; }
       const state = d?.event === 'onStateChange' ? d.info : d?.info?.playerState;
+      // YouTube шле infoDelivery ~4 рази/сек з currentTime і duration
+      if (d?.event === 'infoDelivery' && d.info) {
+        if (typeof d.info.duration === 'number' && d.info.duration > 0) durationRef.current = d.info.duration;
+        if (typeof d.info.currentTime === 'number' && durationRef.current > 0 && !scrubbingRef.current) {
+          setCurTime(d.info.currentTime);
+          setProgress(Math.min(1, d.info.currentTime / durationRef.current));
+        }
+      }
       // Broken / non-embeddable video → show our own fallback, not YT's grey box
       if (d?.event === 'onError') {
         setEmbedError(true);
@@ -213,6 +230,26 @@ function VideoCard({
       startSoundFade();
     }
   };
+
+  // --- Перемотка по прогрес-смузі ---
+  const fmtTime = (sec) => {
+    if (!sec || sec < 0) sec = 0;
+    const m = Math.floor(sec / 60), s2 = Math.floor(sec % 60);
+    return `${m}:${String(s2).padStart(2, '0')}`;
+  };
+  const seekToClientX = (clientX) => {
+    const el = barRef.current;
+    if (!el || durationRef.current <= 0) return;
+    const rect = el.getBoundingClientRect();
+    let frac = (clientX - rect.left) / rect.width;
+    frac = Math.max(0, Math.min(1, frac));
+    setProgress(frac);
+    setCurTime(frac * durationRef.current);
+    sendCommand('seekTo', [frac * durationRef.current, true]);
+  };
+  const onScrubStart = (e) => { scrubbingRef.current = true; setScrubbing(true); haptic('light'); seekToClientX(e.touches[0].clientX); };
+  const onScrubMove = (e) => { if (scrubbingRef.current) seekToClientX(e.touches[0].clientX); };
+  const onScrubEnd = () => { scrubbingRef.current = false; setScrubbing(false); };
 
   // --- Long-press на назві в огляді → копіювання + вібрація ---
   const titleTimer = useRef(null);
@@ -359,6 +396,37 @@ function VideoCard({
           <div className="bg-white/25 backdrop-blur-xl border border-white/40 rounded-full pl-3 pr-4 py-2 flex items-center gap-2 shadow-xl">
             <VolumeX size={15} className="text-white" />
             <p className="text-white text-xs font-semibold whitespace-nowrap">Торкніться — увімкнемо звук</p>
+          </div>
+        </div>
+      )}
+
+      {/* Прогрес-смуга (TikTok-style): тап або протяг = перемотка */}
+      {active && !embedError && (
+        <div
+          className="landscape-hide absolute left-0 right-0 z-40 px-3"
+          style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 2px)', touchAction: 'none' }}
+          onTouchStart={onScrubStart}
+          onTouchMove={onScrubMove}
+          onTouchEnd={onScrubEnd}
+          onTouchCancel={onScrubEnd}
+        >
+          {scrubbing && (
+            <div className="text-center mb-2">
+              <span className="text-white text-sm font-bold tabular-nums drop-shadow-lg">
+                {fmtTime(curTime)} <span className="text-white/50">/ {fmtTime(durationRef.current)}</span>
+              </span>
+            </div>
+          )}
+          <div ref={barRef} className="relative w-full py-2">
+            <div className={`w-full ${scrubbing ? 'h-1.5' : 'h-[3px]'} bg-white/25 rounded-full overflow-hidden transition-all`}>
+              <div className="h-full bg-white rounded-full" style={{ width: `${progress * 100}%` }}></div>
+            </div>
+            {scrubbing && (
+              <div
+                className="absolute top-1/2 w-3.5 h-3.5 -mt-1.5 -ml-1.5 bg-white rounded-full shadow-lg"
+                style={{ left: `${progress * 100}%` }}
+              ></div>
+            )}
           </div>
         </div>
       )}
