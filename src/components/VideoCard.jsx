@@ -66,6 +66,11 @@ function VideoCard({
   const durationRef = useRef(0);
   const scrubbingRef = useRef(false);
   const barRef = useRef(null);
+  const cardRef = useRef(null);
+  const progressRef = useRef(0);
+  useEffect(() => { progressRef.current = progress; }, [progress]);
+  const suppressTapRef = useRef(false);
+  const [trail, setTrail] = useState(null); // білий слід під час свайп-перемотки
 
   // TMDB backdrop first: YouTube's maxresdefault.jpg often doesn't exist and
   // renders as the ugly grey "3 dots" placeholder. hqdefault always exists.
@@ -180,6 +185,62 @@ function VideoCard({
     return () => window.removeEventListener('message', onMsg);
   }, [active]);
 
+  // --- Свайп вліво/вправо по всій картці = перемотка (+ білий слід) ---
+  // Горизонтальний рух перехоплюємо (preventDefault), вертикальний віддаємо
+  // фіду (зміна ролика). Тап лишається play/pause.
+  useEffect(() => {
+    const el = cardRef.current;
+    if (!el || !active) return;
+    const g = { sx: 0, sy: 0, sp: 0, dir: null, w: 1, l: 0, t: 0, frac: 0, last: 0 };
+    const onStart = (e) => {
+      if (durationRef.current <= 0) return;
+      if (barRef.current?.contains(e.target) || e.target.closest?.('[data-noseek]')) return;
+      const r = el.getBoundingClientRect();
+      const tt = e.touches[0];
+      g.w = r.width; g.l = r.left; g.t = r.top;
+      g.sx = tt.clientX; g.sy = tt.clientY; g.sp = progressRef.current; g.dir = null;
+    };
+    const onMove = (e) => {
+      if (durationRef.current <= 0 || g.dir === 'vert') return;
+      const tt = e.touches[0];
+      const dx = tt.clientX - g.sx, dy = tt.clientY - g.sy;
+      if (g.dir === null) {
+        if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+        g.dir = Math.abs(dx) > Math.abs(dy) * 1.2 ? 'horiz' : 'vert';
+        if (g.dir === 'horiz') { scrubbingRef.current = true; setScrubbing(true); haptic('light'); }
+        else return;
+      }
+      if (g.dir !== 'horiz') return;
+      if (e.cancelable) e.preventDefault();
+      g.frac = Math.max(0, Math.min(1, g.sp + dx / g.w));
+      setProgress(g.frac);
+      setCurTime(g.frac * durationRef.current);
+      setTrail({ startX: g.sx - g.l, x: tt.clientX - g.l, y: tt.clientY - g.t });
+      const now = Date.now();
+      if (now - g.last > 45) { sendCommand('seekTo', [g.frac * durationRef.current, true]); g.last = now; }
+    };
+    const onEnd = () => {
+      if (g.dir === 'horiz') {
+        sendCommand('seekTo', [g.frac * durationRef.current, true]);
+        suppressTapRef.current = true;
+        scrubbingRef.current = false;
+        setScrubbing(false);
+        setTrail(null);
+      }
+      g.dir = null;
+    };
+    el.addEventListener('touchstart', onStart, { passive: true });
+    el.addEventListener('touchmove', onMove, { passive: false });
+    el.addEventListener('touchend', onEnd, { passive: true });
+    el.addEventListener('touchcancel', onEnd, { passive: true });
+    return () => {
+      el.removeEventListener('touchstart', onStart);
+      el.removeEventListener('touchmove', onMove);
+      el.removeEventListener('touchend', onEnd);
+      el.removeEventListener('touchcancel', onEnd);
+    };
+  }, [active]);
+
   // Handshake so the iframe starts posting onStateChange events to us
   const handleIframeLoad = () => {
     try {
@@ -197,6 +258,7 @@ function VideoCard({
   // звук (це і є той обовʼязковий user gesture, який вимагає WebView),
   // далі тапи працюють як play/pause.
   const handlePlayPause = () => {
+    if (suppressTapRef.current) { suppressTapRef.current = false; return; }
     if (isGlobalMuted && !everUnmuted) {
       setIsGlobalMuted(false);
       haptic('light');
@@ -309,7 +371,7 @@ function VideoCard({
   }
 
   return (
-    <div className="relative w-full h-[100dvh] snap-start bg-black flex items-center justify-center overflow-hidden">
+    <div ref={cardRef} className="relative w-full h-[100dvh] snap-start bg-black flex items-center justify-center overflow-hidden">
 
       {/* 1. Ambient Background */}
       <div className="absolute inset-0 z-0 overflow-hidden pointer-events-none">
@@ -403,8 +465,8 @@ function VideoCard({
       {/* Прогрес-смуга (TikTok-style): тап або протяг = перемотка */}
       {active && !embedError && (
         <div
-          className="landscape-hide absolute left-0 right-0 z-40 px-3"
-          style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 2px)', touchAction: 'none' }}
+          className="landscape-hide absolute left-1/2 -translate-x-1/2 w-[80%] z-40"
+          style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 3px)', touchAction: 'none' }}
           onTouchStart={onScrubStart}
           onTouchMove={onScrubMove}
           onTouchEnd={onScrubEnd}
@@ -417,7 +479,7 @@ function VideoCard({
               </span>
             </div>
           )}
-          <div ref={barRef} className="relative w-full py-2">
+          <div ref={barRef} className="relative w-full pt-5 pb-1">
             <div className={`w-full ${scrubbing ? 'h-1.5' : 'h-[3px]'} bg-white/25 rounded-full overflow-hidden transition-all`}>
               <div className="h-full bg-white rounded-full" style={{ width: `${progress * 100}%` }}></div>
             </div>
@@ -431,11 +493,32 @@ function VideoCard({
         </div>
       )}
 
+      {/* Білий слід від пальця під час свайп-перемотки */}
+      {trail && (
+        <div className="landscape-hide absolute inset-0 z-[45] pointer-events-none overflow-hidden">
+          <div
+            className="absolute rounded-full"
+            style={{
+              top: trail.y - 3,
+              left: Math.min(trail.startX, trail.x),
+              width: Math.abs(trail.x - trail.startX),
+              height: 6,
+              background: `linear-gradient(to ${trail.x >= trail.startX ? 'right' : 'left'}, rgba(255,255,255,0), rgba(255,255,255,0.9))`,
+              filter: 'blur(2px)'
+            }}
+          ></div>
+          <div
+            className="absolute rounded-full bg-white"
+            style={{ left: trail.x - 9, top: trail.y - 9, width: 18, height: 18, boxShadow: '0 0 26px 8px rgba(255,255,255,0.75)' }}
+          ></div>
+        </div>
+      )}
+
       {/* Right Actions (portrait: right column; landscape: bottom row via CSS) */}
       {/* Кнопки видимі ЗАВЖДИ: ховання через opacity на неактивних картках
           виглядало як миготіння на кожному свайпі. У сусідніх карток вимкнені
           лише кліки — щоб тап посеред свайпу не зберіг інший фільм. */}
-      <div className={`landscape-actions absolute right-3 bottom-20 flex flex-col items-center gap-4 z-30 ${active ? 'pointer-events-auto' : 'pointer-events-none'}`}>
+      <div data-noseek="1" className={`landscape-actions absolute right-3 bottom-20 flex flex-col items-center gap-4 z-30 ${active ? 'pointer-events-auto' : 'pointer-events-none'}`}>
         <ActionBtn
           icon={<Heart size={24} className={isSaved ? 'fill-white text-white' : 'text-white'} />}
           label={isSaved ? "Додано" : "Зберегти"}
@@ -466,7 +549,7 @@ function VideoCard({
       </div>
 
       {/* Bottom Info — теж завжди видиме (без fade-in при кожному свайпі) */}
-      <div className="landscape-info absolute bottom-4 left-4 right-20 z-30 flex flex-col gap-1.5 pointer-events-none text-white drop-shadow-lg">
+      <div data-noseek="1" className="landscape-info absolute bottom-4 left-4 right-20 z-30 flex flex-col gap-1.5 pointer-events-none text-white drop-shadow-lg">
         {upcoming && (
           <span className="bg-white text-black px-2 py-0.5 rounded text-[10px] font-bold self-start mb-0.5">
             Вихід: {formatDateUA(movie.release_date)}
