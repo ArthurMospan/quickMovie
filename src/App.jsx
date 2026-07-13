@@ -171,7 +171,14 @@ export default function App() {
   const [showProfile, setShowProfile] = useState(false);
 
   // --- Global Audio State ---
-  const [isGlobalMuted, setIsGlobalMuted] = useState(true);
+  // everUnmuted: чи вмикав користувач звук хоч раз за сесію. Поки ні —
+  // перший тап по відео вмикає звук (жест для WebView) замість паузи.
+  const [isGlobalMuted, setIsGlobalMutedRaw] = useState(true);
+  const [everUnmuted, setEverUnmuted] = useState(false);
+  const setIsGlobalMuted = useCallback((muted) => {
+    setIsGlobalMutedRaw(muted);
+    if (muted === false) setEverUnmuted(true);
+  }, []);
 
   // --- Genre map for filter summary ---
   const [genreMap, setGenreMap] = useState({});
@@ -704,7 +711,8 @@ export default function App() {
                 onToggleSave={handleToggleSave}
                 isGlobalMuted={isGlobalMuted}
                 setIsGlobalMuted={setIsGlobalMuted}
-                isFirstVideo={index === 0}
+                everUnmuted={everUnmuted}
+                notify={showToast}
                 onRemind={handleRemind}
                 preload={index === activeIndex + 1 || index === activeIndex + 2 || index === activeIndex - 1}
               />
@@ -804,6 +812,7 @@ export default function App() {
           watched={userData.watched || []}
           onGoToProfile={() => setShowProfile(true)}
           notify={showToast}
+          onWatchTrailer={handleWatchTrailer}
         />
       )}
 
@@ -812,9 +821,12 @@ export default function App() {
         <AISearchTab onWatchTrailer={handleWatchTrailer} />
       </div>
 
-      {/* ===== TOAST ===== */}
+      {/* ===== TOAST (зверху, під шапкою — не перекривається клавіатурою/кнопками) ===== */}
       {toast && (
-        <div className="absolute left-1/2 -translate-x-1/2 bottom-24 z-[60] pointer-events-none animate-in">
+        <div
+          className="absolute left-1/2 -translate-x-1/2 z-[60] pointer-events-none toast-in"
+          style={{ top: 'calc(var(--app-top) + 46px)' }}
+        >
           <div className="bg-black/70 backdrop-blur-xl border border-white/15 rounded-full px-5 py-2.5 shadow-2xl">
             <p className="text-sm font-semibold text-white whitespace-nowrap">{toast}</p>
           </div>

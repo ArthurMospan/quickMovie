@@ -1,22 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react';
 import { Heart, Star, Eye, Check, Users, Film, Trash2, RotateCcw } from 'lucide-react';
 import { getMediaByIds } from '../services/tmdb';
-
-const copyToClipboard = (text) => {
-  if (navigator.clipboard?.writeText) {
-    return navigator.clipboard.writeText(text).catch(() => legacyCopy(text));
-  }
-  legacyCopy(text);
-  return Promise.resolve();
-};
-const legacyCopy = (text) => {
-  const ta = document.createElement('textarea');
-  ta.value = text;
-  document.body.appendChild(ta);
-  ta.select();
-  try { document.execCommand('copy'); } catch (e) { /* ignore */ }
-  document.body.removeChild(ta);
-};
+import { copyToClipboard, haptic } from '../services/ui';
+import MovieDetailsModal from './MovieDetailsModal';
 
 // Full display title: "Українська / Original Title" (when they differ)
 const getFullTitle = (movie) => {
@@ -42,23 +28,35 @@ function MiniAvatar({ src, fallback }) {
  *  'shared'  — adder avatars; star (filled) to remove IF I added it
  *  'watched' — restore (return to my list)
  */
-function MovieCard({ movie, variant, isShared, sharedByMe, sharedByPartner, myPhoto, partnerPhoto, partnerName, onToggleSave, onToggleWatched, onToggleShared, notify }) {
+function MovieCard({ movie, variant, isShared, sharedByMe, sharedByPartner, myPhoto, partnerPhoto, partnerName, onToggleSave, onToggleWatched, onToggleShared, notify, onOpen }) {
   const posterUrl = movie.poster_path ? `https://image.tmdb.org/t/p/w342${movie.poster_path}` : null;
   const fullTitle = getFullTitle(movie);
   const pressTimer = useRef(null);
+  const longFired = useRef(false); // long-press спрацював → наступний click ігноруємо
 
-  // Long-press anywhere on the card → copy the title
+  // Long-press anywhere on the card → copy the title (+ вібрація)
   const pressStart = () => {
+    longFired.current = false;
     pressTimer.current = setTimeout(() => {
+      longFired.current = true;
       copyToClipboard(fullTitle);
+      haptic('success');
       notify?.('Назву скопійовано 📋');
     }, 500);
   };
   const pressEnd = () => clearTimeout(pressTimer.current);
 
+  // Звичайний тап по картці (не по кнопках) → модалка деталей
+  const handleClick = (e) => {
+    if (longFired.current) { longFired.current = false; return; }
+    if (e.target.closest('button')) return;
+    onOpen?.(movie);
+  };
+
   return (
     <div
-      className="no-callout bg-[#111] rounded-2xl overflow-hidden relative aspect-[2/3] border border-white/5"
+      className="no-callout bg-[#111] rounded-2xl overflow-hidden relative aspect-[2/3] border border-white/5 cursor-pointer"
+      onClick={handleClick}
       onTouchStart={pressStart}
       onTouchEnd={pressEnd}
       onTouchMove={pressEnd}
@@ -164,11 +162,12 @@ function MovieCard({ movie, variant, isShared, sharedByMe, sharedByPartner, myPh
 
 export default function WishlistView({
   mySaves, myShared, partnerShared, partnerId, partnerProfile, myPhoto, initialTab,
-  onToggleSave, onToggleWatched, onToggleShared, watched, onGoToProfile, notify
+  onToggleSave, onToggleWatched, onToggleShared, watched, onGoToProfile, notify, onWatchTrailer
 }) {
   const [tab, setTab] = useState(initialTab || 'mine');
   const [moviesCache, setMoviesCache] = useState({});
   const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState(null); // фільм для модалки деталей
 
   // Shared list = MY starred + PARTNER's starred (union)
   const sharedIds = useMemo(() => {
@@ -207,14 +206,17 @@ export default function WishlistView({
   // movies as a bare id. All toggles must use _key, NOT movie.id — otherwise
   // toggling a series would create/remove a bare id that resolves to a movie.
   const withKey = (id) => (moviesCache[id] ? { ...moviesCache[id], _key: id } : null);
-  const myItems = useMemo(() => mySaves.map(withKey).filter(Boolean), [mySaves, moviesCache]);
-  const watchedItems = useMemo(() => watched.map(withKey).filter(Boolean), [watched, moviesCache]);
-  const sharedItems = useMemo(() => sharedIds.map(withKey).filter(Boolean), [sharedIds, moviesCache]);
+  // Списки зберігаються у порядку додавання (push у кінець) —
+  // для показу розвертаємо: останні додані першими.
+  const myItems = useMemo(() => [...mySaves].reverse().map(withKey).filter(Boolean), [mySaves, moviesCache]);
+  const watchedItems = useMemo(() => [...watched].reverse().map(withKey).filter(Boolean), [watched, moviesCache]);
+  const sharedItems = useMemo(() => [...sharedIds].reverse().map(withKey).filter(Boolean), [sharedIds, moviesCache]);
 
   const partnerName = partnerProfile?.name || null;
 
   return (
-    <div className="absolute inset-0 z-10 bg-[#0a0a0a] flex flex-col" style={{ paddingTop: 'var(--app-top)' }}>
+    // z-50 коли відкрита модалка деталей: інакше TopNav (z-40) висів би над нею
+    <div className={`absolute inset-0 ${selected ? 'z-50' : 'z-10'} bg-[#0a0a0a] flex flex-col`} style={{ paddingTop: 'var(--app-top)' }}>
 
       {/* Tabs: ❤ Мій · ⭐ Спільні · 👁 Бачив */}
       <div className="wl-tabs shrink-0 px-4 pb-4">
@@ -258,7 +260,7 @@ export default function WishlistView({
                   key={movie._key} movie={movie} variant="mine"
                   isShared={myShared?.includes(movie._key)}
                   onToggleSave={onToggleSave} onToggleWatched={onToggleWatched} onToggleShared={onToggleShared}
-                  notify={notify}
+                  notify={notify} onOpen={setSelected}
                 />
               ))}
             </div>
@@ -310,7 +312,7 @@ export default function WishlistView({
                   partnerPhoto={partnerProfile?.photo}
                   partnerName={partnerName}
                   onToggleSave={onToggleSave} onToggleWatched={onToggleWatched} onToggleShared={onToggleShared}
-                  notify={notify}
+                  notify={notify} onOpen={setSelected}
                 />
               ))}
             </div>
@@ -331,7 +333,7 @@ export default function WishlistView({
                 <MovieCard
                   key={movie._key} movie={movie} variant="watched"
                   onToggleSave={onToggleSave} onToggleWatched={onToggleWatched} onToggleShared={onToggleShared}
-                  notify={notify}
+                  notify={notify} onOpen={setSelected}
                 />
               ))}
             </div>
@@ -345,6 +347,16 @@ export default function WishlistView({
           </div>
         )}
       </div>
+
+      {/* Модалка деталей фільму */}
+      {selected && (
+        <MovieDetailsModal
+          movie={selected}
+          onClose={() => setSelected(null)}
+          onWatchTrailer={onWatchTrailer}
+          notify={notify}
+        />
+      )}
     </div>
   );
 }

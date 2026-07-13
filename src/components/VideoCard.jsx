@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo, memo } from 'react';
 import { Heart, Share, Star, CheckCircle2, VolumeX, Volume2, Bell, Play } from 'lucide-react';
+import { copyToClipboard, haptic } from '../services/ui';
 
 const BOT_USERNAME = 'q_moviebot';
 
@@ -39,7 +40,7 @@ function openCalendarReminder(movie) {
 
 function VideoCard({
   movie, active, isSaved, onToggleSave,
-  isGlobalMuted, setIsGlobalMuted, isFirstVideo, onRemind, preload
+  isGlobalMuted, setIsGlobalMuted, everUnmuted, onRemind, preload, notify
 }) {
   const iframeRef = useRef(null);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -72,6 +73,24 @@ function VideoCard({
     } catch (e) { /* iframe not ready */ }
   };
 
+  // --- Плавне наростання звуку (щоб не лякати різким стартом) ---
+  // Гучність з 0 до 100 за ~1.5с. Викликається при кожному вмиканні звуку
+  // і при старті кожного нового трейлера, коли звук глобально увімкнений.
+  const fadeTimer = useRef(null);
+  const hasFadedIn = useRef(false); // 1 fade на активацію картки (не на кожен loop/resume)
+  const startSoundFade = () => {
+    hasFadedIn.current = true;
+    clearInterval(fadeTimer.current);
+    sendCommand('setVolume', [0]);
+    sendCommand('unMute');
+    let v = 0;
+    fadeTimer.current = setInterval(() => {
+      v = Math.min(v + 8, 100);
+      sendCommand('setVolume', [v]);
+      if (v >= 100) clearInterval(fadeTimer.current);
+    }, 120);
+  };
+
   // When card becomes active, try autoplay + set state.
   // Keep JS-API commands to a minimum — each one can make the mobile player
   // flash its native controls for a moment. The URL already starts muted, so
@@ -83,24 +102,27 @@ function VideoCard({
       // make sure it doesn't keep playing in the background.
       sendCommand('pauseVideo');
       playingRef.current = false;
+      clearInterval(fadeTimer.current);
+      hasFadedIn.current = false;
       return;
     }
     setWarmingUp(true);
     setEmbedError(false);
     playingRef.current = false;
+    hasFadedIn.current = false;
     setIsPlaying(true); // optimistic; events correct this
     // The player is (usually) already preloaded with autoplay=0 → start fast,
     // retry once in case the iframe wasn't ready yet.
+    // Звук НЕ вмикаємо тут — fade-in стартує на події "playing" (нижче).
     const kick = () => {
       if (playingRef.current) return;
       sendCommand('playVideo');
-      if (!mutedRef.current) sendCommand('unMute');
     };
     const t0 = setTimeout(kick, 100);
     const t1 = setTimeout(kick, 900);
     // Reveal is event-driven (onStateChange "playing" below); safety fallback:
     const tWarm = setTimeout(() => setWarmingUp(false), 1800);
-    return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(tWarm); clearTimeout(revealTimer.current); };
+    return () => { clearTimeout(t0); clearTimeout(t1); clearTimeout(tWarm); clearTimeout(revealTimer.current); clearInterval(fadeTimer.current); };
   }, [active]);
 
   // Loop via JS API instead of loop=1&playlist=... — playlist mode is what
@@ -131,6 +153,10 @@ function VideoCard({
         setIsPlaying(true);
         clearTimeout(revealTimer.current);
         revealTimer.current = setTimeout(() => setWarmingUp(false), 250);
+        // Звук увімкнений глобально → плавно піднімаємо гучність (раз на картку)
+        if (!mutedRef.current && !hasFadedIn.current) {
+          startSoundFade();
+        }
       }
     };
     window.addEventListener('message', onMsg);
@@ -145,13 +171,22 @@ function VideoCard({
       );
       if (active) {
         sendCommand('playVideo');
-        if (!mutedRef.current) sendCommand('unMute');
       }
     } catch (e) { /* not ready */ }
   };
 
   // --- Tap to play/pause ---
+  // Поки користувач ЖОДНОГО разу не вмикав звук — перший тап по відео вмикає
+  // звук (це і є той обовʼязковий user gesture, який вимагає WebView),
+  // далі тапи працюють як play/pause.
   const handlePlayPause = () => {
+    if (isGlobalMuted && !everUnmuted) {
+      setIsGlobalMuted(false);
+      haptic('light');
+      if (!isPlaying) { sendCommand('playVideo'); setIsPlaying(true); }
+      startSoundFade();
+      return;
+    }
     if (isPlaying) {
       sendCommand('pauseVideo');
       setIsPlaying(false);
@@ -171,15 +206,27 @@ function VideoCard({
   const handleToggleMute = () => {
     const newMuted = !isGlobalMuted;
     setIsGlobalMuted(newMuted);
-    sendCommand(newMuted ? 'mute' : 'unMute');
+    if (newMuted) {
+      clearInterval(fadeTimer.current);
+      sendCommand('mute');
+    } else {
+      startSoundFade();
+    }
   };
 
-  const handleOverlayUnmute = () => {
-    setIsGlobalMuted(false);
-    sendCommand('unMute');
-    sendCommand('playVideo');
-    setIsPlaying(true);
+  // --- Long-press на назві в огляді → копіювання + вібрація ---
+  const titleTimer = useRef(null);
+  const titleLongFired = useRef(false);
+  const titlePressStart = () => {
+    titleLongFired.current = false;
+    titleTimer.current = setTimeout(() => {
+      titleLongFired.current = true;
+      copyToClipboard(movie.title);
+      haptic('success');
+      notify?.('Назву скопійовано 📋');
+    }, 450);
   };
+  const titlePressEnd = () => clearTimeout(titleTimer.current);
 
   // Share a deep link into the app (startapp=m_<id>/s_<id>) — the friend opens
   // the same card in QuickMovie, not a bare YouTube page.
@@ -304,20 +351,16 @@ function VideoCard({
         </button>
       )}
 
-      {/* 5. First-run "Tap to unmute" overlay */}
-      {active && isFirstVideo && isGlobalMuted && isPlaying && (
-        <button
-          onClick={(e) => { e.stopPropagation(); handleOverlayUnmute(); }}
-          className="absolute inset-0 z-40 flex items-center justify-center pointer-events-auto bg-black/30"
-        >
-          <div className="bg-white/10 backdrop-blur-xl border border-white/20 rounded-3xl px-8 py-5 flex flex-col items-center gap-3 shadow-[0_8px_40px_rgba(0,0,0,0.5)]">
-            <div className="w-16 h-16 rounded-full bg-white/15 flex items-center justify-center border border-white/20">
-              <VolumeX size={32} className="text-white/80" />
-            </div>
-            <p className="text-white font-bold text-base">Натисніть, щоб увімкнути звук</p>
-            <p className="text-white/50 text-xs">Або свайпайте далі без звуку</p>
+      {/* 5. Ненавʼязлива підказка про звук (замість повноекранної плашки).
+             Тап по будь-якому місцю відео вмикає звук з fade-in — плашку
+             прибрано, але жест користувача для WebView все одно потрібен. */}
+      {active && isGlobalMuted && !everUnmuted && isPlaying && !warmingUp && (
+        <div className="absolute left-1/2 -translate-x-1/2 bottom-40 z-40 pointer-events-none animate-in">
+          <div className="bg-black/55 backdrop-blur-xl border border-white/15 rounded-full pl-3 pr-4 py-2 flex items-center gap-2 shadow-xl">
+            <VolumeX size={15} className="text-white/70" />
+            <p className="text-white/90 text-xs font-semibold whitespace-nowrap">Торкніться — увімкнемо звук</p>
           </div>
-        </button>
+        </div>
       )}
 
       {/* Right Actions (portrait: right column; landscape: bottom row via CSS) */}
@@ -360,7 +403,25 @@ function VideoCard({
             Вихід: {formatDateUA(movie.release_date)}
           </span>
         )}
-        <h2 className="text-2xl font-bold leading-tight drop-shadow-md">{movie.title}</h2>
+        {/* Назва: зажати → скопіювати (з вібрацією) */}
+        <h2
+          className="no-callout text-2xl font-bold leading-tight drop-shadow-md pointer-events-auto"
+          onTouchStart={titlePressStart}
+          onTouchEnd={titlePressEnd}
+          onTouchMove={titlePressEnd}
+          onMouseDown={titlePressStart}
+          onMouseUp={titlePressEnd}
+          onMouseLeave={titlePressEnd}
+          onContextMenu={(e) => e.preventDefault()}
+          onClick={() => {
+            // короткий тап по назві поводиться як тап по відео (play/pause),
+            // long-press уже скопіював назву — click ковтаємо
+            if (titleLongFired.current) { titleLongFired.current = false; return; }
+            handlePlayPause();
+          }}
+        >
+          {movie.title}
+        </h2>
         <p className="text-sm text-white/90 line-clamp-3 font-medium drop-shadow-md">{movie.overview}</p>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1 text-xs font-semibold text-white/90">
           <span className="flex items-center gap-1">

@@ -488,6 +488,30 @@ export const getMediaByIds = async (keys, onBatch) => {
   return result;
 };
 
+// --- Where to watch (TMDB/JustWatch data) ---
+// Повертає провайдерів для України з fallback на US.
+// link — сторінка JustWatch (TMDB вимагає атрибуцію даних).
+export const getWatchProviders = async (isTv, id) => {
+  try {
+    const data = await fetchFromTMDB(`/${isTv ? 'tv' : 'movie'}/${id}/watch/providers`);
+    const region = data.results?.UA || data.results?.US || null;
+    if (!region) return null;
+    const dedupe = (arr = []) => {
+      const seen = new Set();
+      return arr.filter(p => !seen.has(p.provider_id) && seen.add(p.provider_id));
+    };
+    return {
+      link: region.link || null,
+      flatrate: dedupe(region.flatrate),
+      rent: dedupe(region.rent),
+      buy: dedupe(region.buy),
+      isUA: !!data.results?.UA
+    };
+  } catch (e) {
+    return null;
+  }
+};
+
 // --- Extract Trailer Key ---
 // Accepts any YouTube video: Trailer > Teaser > Clip > Featurette > any
 export const getTrailerKey = (details) => {

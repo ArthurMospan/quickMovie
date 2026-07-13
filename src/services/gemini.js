@@ -40,16 +40,21 @@ const callGeminiDirect = async (description) => {
 
     console.log('[AI Search] Trying direct Gemini call...');
 
-    const models = ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.0-flash'];
+    // gemini-2.0-flash вимкнено Google 01.06.2026; 2.5-flash — до 16.10.2026.
+    // Актуальні стабільні: 3.5-flash та 3.1-flash-lite (тримати в синхроні з api/search.js).
+    const models = ['gemini-3.5-flash', 'gemini-3.1-flash-lite', 'gemini-2.5-flash'];
     const prompt = buildPrompt(description);
 
     for (const model of models) {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
 
-        // Gemini 2.5: disable thinking, otherwise it eats maxOutputTokens and returns empty text
-        const generationConfig = { temperature: 0.3, maxOutputTokens: 512 };
+        // Disable/minimize thinking, otherwise it eats maxOutputTokens and returns empty text.
+        // Gemini 2.5 → thinkingBudget, Gemini 3.5 → thinkingLevel.
+        const generationConfig = { temperature: 0.3, maxOutputTokens: 1024 };
         if (model.startsWith('gemini-2.5')) {
             generationConfig.thinkingConfig = { thinkingBudget: 0 };
+        } else if (model.startsWith('gemini-3.5')) {
+            generationConfig.thinkingConfig = { thinkingLevel: 'minimal' };
         }
 
         try {
@@ -76,7 +81,7 @@ const callGeminiDirect = async (description) => {
         }
     }
 
-    throw new Error('ШІ перевантажений. Спробуйте через 30 секунд.');
+    throw new Error('ШІ зараз недоступний. Спробуйте за хвилину.');
 };
 
 // --- Main export ---
