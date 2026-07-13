@@ -462,33 +462,26 @@ function VideoCard({
         </div>
       )}
 
-      {/* Прогрес-смуга (TikTok-style): тап або протяг = перемотка */}
+      {/* Прогрес-індикатор: тонка смуга впритул до низу екрана.
+          Перемотка тепер свайпом по картці, тож смуга суто інформативна. */}
       {active && !embedError && (
+        <div className="landscape-hide absolute left-1/2 -translate-x-1/2 w-[80%] z-40 pointer-events-none" style={{ bottom: 0 }}>
+          <div className={`w-full ${scrubbing ? 'h-1' : 'h-[3px]'} bg-white/25 overflow-hidden transition-all`}>
+            <div className="h-full bg-white" style={{ width: `${progress * 100}%` }}></div>
+          </div>
+        </div>
+      )}
+
+      {/* Час перемотки — зверху відео, поки тягнеш палець */}
+      {active && scrubbing && (
         <div
-          className="landscape-hide absolute left-1/2 -translate-x-1/2 w-[80%] z-40"
-          style={{ bottom: 'calc(env(safe-area-inset-bottom, 0px) + 3px)', touchAction: 'none' }}
-          onTouchStart={onScrubStart}
-          onTouchMove={onScrubMove}
-          onTouchEnd={onScrubEnd}
-          onTouchCancel={onScrubEnd}
+          className="landscape-hide absolute left-1/2 -translate-x-1/2 z-[46] pointer-events-none animate-in"
+          style={{ top: 'calc(var(--tg-content-safe-area-inset-top, env(safe-area-inset-top, 0px)) + 12px)' }}
         >
-          {scrubbing && (
-            <div className="text-center mb-2">
-              <span className="text-white text-sm font-bold tabular-nums drop-shadow-lg">
-                {fmtTime(curTime)} <span className="text-white/50">/ {fmtTime(durationRef.current)}</span>
-              </span>
-            </div>
-          )}
-          <div ref={barRef} className="relative w-full pt-5 pb-1">
-            <div className={`w-full ${scrubbing ? 'h-1.5' : 'h-[3px]'} bg-white/25 rounded-full overflow-hidden transition-all`}>
-              <div className="h-full bg-white rounded-full" style={{ width: `${progress * 100}%` }}></div>
-            </div>
-            {scrubbing && (
-              <div
-                className="absolute top-1/2 w-3.5 h-3.5 -mt-1.5 -ml-1.5 bg-white rounded-full shadow-lg"
-                style={{ left: `${progress * 100}%` }}
-              ></div>
-            )}
+          <div className="bg-black/60 backdrop-blur-xl border border-white/15 rounded-full px-4 py-1.5 shadow-xl">
+            <span className="text-white text-sm font-bold tabular-nums whitespace-nowrap">
+              {fmtTime(curTime)} <span className="text-white/45">/ {fmtTime(durationRef.current)}</span>
+            </span>
           </div>
         </div>
       )}
