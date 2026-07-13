@@ -122,6 +122,26 @@ export default function App() {
   // --- Tab State ---
   const [activeTab, setActiveTab] = useState('feed');
 
+  // --- Rotation skeleton: mask the iframe-reflow jank on orientation flip ---
+  const [rotating, setRotating] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(orientation: landscape)');
+    let hideTimer = null;
+    const onChange = () => {
+      setRotating(true);
+      clearTimeout(hideTimer);
+      hideTimer = setTimeout(() => setRotating(false), 350);
+    };
+    // Safari/old WebViews: matchMedia 'change' may not fire — orientationchange is the fallback
+    mq.addEventListener?.('change', onChange);
+    window.addEventListener('orientationchange', onChange);
+    return () => {
+      clearTimeout(hideTimer);
+      mq.removeEventListener?.('change', onChange);
+      window.removeEventListener('orientationchange', onChange);
+    };
+  }, []);
+
   // --- Feed State ---
   const [movies, setMovies] = useState([]);
   const [activeIndex, setActiveIndex] = useState(0);
@@ -851,6 +871,18 @@ export default function App() {
           setPartnerId={handleSetPartnerId}
           onOpenList={openListFromProfile}
         />
+      )}
+
+      {/* ===== ROTATION SKELETON =====
+          Reflow of the active/preloaded YouTube iframes on orientation flip
+          is visibly janky — this cheap (no-iframe) overlay masks it for the
+          ~350ms the real layout needs to settle. */}
+      {rotating && (
+        <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center gap-3 pointer-events-auto">
+          <div className="w-4/5 max-w-sm aspect-video rounded-2xl bg-white/10 animate-pulse"></div>
+          <div className="w-1/2 max-w-xs h-4 rounded-full bg-white/10 animate-pulse"></div>
+          <div className="w-1/3 max-w-[10rem] h-3 rounded-full bg-white/10 animate-pulse"></div>
+        </div>
       )}
     </div>
   );
