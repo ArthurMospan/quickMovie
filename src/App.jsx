@@ -118,29 +118,34 @@ function getFilterSummary(filters, genreMap) {
   return text.length > 36 ? text.slice(0, 34).trimEnd() + '…' : text;
 }
 
+// Скелетон картки фіда: та сама розкладка, що у VideoCard (відео-сцена,
+// текст знизу зліва, стовпчик кнопок справа) — при появі реальної картки
+// нічого не «стрибає» і не миготить. Використовується і для пагінації,
+// і для першого завантаження, і як оверлей повороту.
+function FeedSkeleton() {
+  return (
+    <>
+      <div className="absolute inset-0 flex items-center justify-center">
+        <div className="yt-stage skel"></div>
+      </div>
+      <div className="absolute bottom-4 left-4 right-20 z-10 flex flex-col gap-2">
+        <div className="h-6 w-3/5 rounded-lg skel"></div>
+        <div className="h-3.5 w-full rounded-md skel"></div>
+        <div className="h-3.5 w-4/5 rounded-md skel"></div>
+        <div className="h-3 w-2/5 rounded-md skel mt-1"></div>
+      </div>
+      <div className="absolute right-3 bottom-20 z-10 flex flex-col gap-4">
+        {[0, 1, 2, 3].map(i => (
+          <div key={i} className="w-10 h-10 rounded-full skel"></div>
+        ))}
+      </div>
+    </>
+  );
+}
+
 export default function App() {
   // --- Tab State ---
   const [activeTab, setActiveTab] = useState('feed');
-
-  // --- Rotation skeleton: mask the iframe-reflow jank on orientation flip ---
-  const [rotating, setRotating] = useState(false);
-  useEffect(() => {
-    const mq = window.matchMedia('(orientation: landscape)');
-    let hideTimer = null;
-    const onChange = () => {
-      setRotating(true);
-      clearTimeout(hideTimer);
-      hideTimer = setTimeout(() => setRotating(false), 350);
-    };
-    // Safari/old WebViews: matchMedia 'change' may not fire — orientationchange is the fallback
-    mq.addEventListener?.('change', onChange);
-    window.addEventListener('orientationchange', onChange);
-    return () => {
-      clearTimeout(hideTimer);
-      mq.removeEventListener?.('change', onChange);
-      window.removeEventListener('orientationchange', onChange);
-    };
-  }, []);
 
   // --- Feed State ---
   const [movies, setMovies] = useState([]);
@@ -155,6 +160,62 @@ export default function App() {
   const feedScrollPos = useRef(0);
   const moviesRef = useRef([]); // fresh feed snapshot for stable callbacks
   const pinnedRef = useRef(null); // deep-linked/AI-opened movie survives the initial reset
+
+  // Свіжий activeIndex для ре-снапу після повороту (ефект підписаний один раз)
+  const activeIndexRef = useRef(0);
+  useEffect(() => { activeIndexRef.current = activeIndex; }, [activeIndex]);
+
+  // --- Rotation overlay ---
+  // Раніше: показати на фіксовані 350мс — але WebView перескладає layout
+  // серією resize-подій і часто не встигає, тому «криво» було видно.
+  // Тепер: оверлей висить, ПОКИ йдуть resize-події (+300мс тиші), потім фід
+  // ре-снапиться до активної картки (висота слайда змінилась — scrollTop у px
+  // вказував би «між» картками) і оверлей плавно зникає.
+  const [rotating, setRotating] = useState(false);
+  const [rotFading, setRotFading] = useState(false);
+  useEffect(() => {
+    const mq = window.matchMedia('(orientation: landscape)');
+    const r = { active: false, settleT: null, failT: null, fadeT: null };
+
+    const finish = () => {
+      if (!r.active) return;
+      r.active = false;
+      clearTimeout(r.settleT);
+      clearTimeout(r.failT);
+      // Ре-снап фіда до активної картки (тільки коли фід видимий)
+      const el = containerRef.current;
+      if (el && el.clientHeight > 0) {
+        el.scrollTo({ top: activeIndexRef.current * el.clientHeight, behavior: 'instant' });
+      }
+      setRotFading(true);
+      r.fadeT = setTimeout(() => { setRotating(false); setRotFading(false); }, 220);
+    };
+    const settle = () => {
+      clearTimeout(r.settleT);
+      r.settleT = setTimeout(finish, 300); // 300мс без resize = layout устаканився
+    };
+    const begin = () => {
+      clearTimeout(r.fadeT);
+      setRotFading(false);
+      setRotating(true);
+      r.active = true;
+      settle();
+      clearTimeout(r.failT);
+      r.failT = setTimeout(finish, 1600); // страховка: оверлей ніколи не висне
+    };
+    const onResize = () => { if (r.active) settle(); };
+
+    // Safari/old WebViews: matchMedia 'change' may not fire — orientationchange is the fallback
+    mq.addEventListener?.('change', begin);
+    window.addEventListener('orientationchange', begin);
+    window.addEventListener('resize', onResize);
+    return () => {
+      clearTimeout(r.settleT); clearTimeout(r.failT); clearTimeout(r.fadeT);
+      mq.removeEventListener?.('change', begin);
+      window.removeEventListener('orientationchange', begin);
+      window.removeEventListener('resize', onResize);
+    };
+  }, []);
 
   // --- Telegram User & Data (local-first: starts from localStorage) ---
   const [user, setUser] = useState(null);
@@ -519,7 +580,8 @@ export default function App() {
       setActiveIndex(index);
     }
 
-    if (scrollHeight - scrollTop <= clientHeight * 3 && !loading && !isFetching.current && !feedEnded && !loadError) {
+    // ×5 екранів: підвантаження стартує раніше — до скелетона доскролюєшся рідше
+    if (scrollHeight - scrollTop <= clientHeight * 5 && !loading && !isFetching.current && !feedEnded && !loadError) {
       loadMovies(page);
     }
   };
@@ -738,10 +800,11 @@ export default function App() {
               />
             ))}
 
+            {/* Скелетон замість спінера: виглядає як картка, тому підміна
+                на реальний трейлер не «миготить» */}
             {loading && (
-              <div className="h-[100dvh] w-full snap-start flex flex-col items-center justify-center text-white/50 bg-black">
-                <div className="w-14 h-14 border-4 border-white/10 border-t-white/80 rounded-full animate-spin mb-4"></div>
-                <p className="font-semibold tracking-wide text-sm">Завантаження трейлерів...</p>
+              <div className="h-[100dvh] w-full snap-start relative bg-black overflow-hidden">
+                <FeedSkeleton />
               </div>
             )}
 
@@ -761,9 +824,8 @@ export default function App() {
             )}
           </div>
         ) : loading ? (
-          <div className="h-[100dvh] w-full flex flex-col items-center justify-center text-white/50 bg-black">
-            <div className="w-14 h-14 border-4 border-white/10 border-t-white/80 rounded-full animate-spin mb-4"></div>
-            <p className="font-semibold tracking-wide text-sm">Завантаження трейлерів...</p>
+          <div className="h-[100dvh] w-full relative bg-black overflow-hidden">
+            <FeedSkeleton />
           </div>
         ) : loadError ? (
           <div className="h-[100dvh] flex flex-col items-center justify-center text-center p-6 bg-black">
@@ -874,14 +936,12 @@ export default function App() {
       )}
 
       {/* ===== ROTATION SKELETON =====
-          Reflow of the active/preloaded YouTube iframes on orientation flip
-          is visibly janky — this cheap (no-iframe) overlay masks it for the
-          ~350ms the real layout needs to settle. */}
+          Оверлей той самий, що й скелетон фіда: висить, поки WebView шле
+          resize-події, потім фід ре-снапиться і оверлей плавно розчиняється —
+          «криве» перескладання iframe користувач не бачить. */}
       {rotating && (
-        <div className="fixed inset-0 z-[100] bg-black flex flex-col items-center justify-center gap-3 pointer-events-auto">
-          <div className="w-4/5 max-w-sm aspect-video rounded-2xl bg-white/10 animate-pulse"></div>
-          <div className="w-1/2 max-w-xs h-4 rounded-full bg-white/10 animate-pulse"></div>
-          <div className="w-1/3 max-w-[10rem] h-3 rounded-full bg-white/10 animate-pulse"></div>
+        <div className={`fixed inset-0 z-[100] bg-black pointer-events-auto transition-opacity duration-200 ${rotFading ? 'opacity-0' : 'opacity-100'}`}>
+          <FeedSkeleton />
         </div>
       )}
     </div>

@@ -1,9 +1,38 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Star, Film, Tv, Play, Copy, Calendar, Clock } from 'lucide-react';
+import { X, Star, Film, Tv, Play, Copy, Calendar, Clock, Eye, Heart, Trash2, ExternalLink } from 'lucide-react';
 import { getMovieDetailsWithVideos, getTVDetailsWithVideos, getWatchProviders, getTrailerKey, getCreditsInfo } from '../services/tmdb';
 import { copyToClipboard, haptic } from '../services/ui';
 
 const IMG = 'https://image.tmdb.org/t/p/';
+
+// --- Де реально дивляться в Україні ---
+// Клік відкриває ПОШУК за назвою на сайті (DLE-сайти приймають query у GET).
+// Дзеркала періодично переїжджають — якщо кнопка перестала працювати,
+// достатньо оновити домен у цьому списку.
+// t = українська назва, o = оригінальна (рєзка краще шукає за оригінальною).
+const UA_SITES = [
+  { name: 'HDrezka', build: (t, o) => `https://rezka.ag/search/?do=search&subaction=search&q=${encodeURIComponent(o || t)}` },
+  { name: 'UAKino', build: (t) => `https://uakino.me/index.php?do=search&subaction=search&story=${encodeURIComponent(t)}` },
+  { name: 'UAFlix', build: (t) => `https://uafix.net/index.php?do=search&subaction=search&story=${encodeURIComponent(t)}` },
+  { name: 'Megogo', build: (t) => `https://megogo.net/ua/search-extended?q=${encodeURIComponent(t)}` },
+  { name: 'sweet.tv', build: (t) => `https://sweet.tv/search?query=${encodeURIComponent(t)}` },
+  { name: 'Київстар ТБ', build: (t) => `https://tv.kyivstar.ua/search?q=${encodeURIComponent(t)}` },
+];
+
+// Зовнішні лінки: через Telegram API, з fallback на window.open
+const openExternal = (url) => {
+  const wa = window.Telegram?.WebApp;
+  if (typeof wa?.openLink === 'function') {
+    try { wa.openLink(url); return; } catch (e) { /* fall through */ }
+  }
+  window.open(url, '_blank');
+};
+
+// Стиль кнопок швидких дій (⭐/👁/🗑)
+const actionChip = (on) =>
+  `flex flex-col items-center justify-center gap-1 py-2.5 rounded-xl border text-[10px] font-bold active:scale-95 transition-transform ${
+    on ? 'bg-white text-black border-white' : 'bg-white/5 text-white/70 border-white/10'
+  }`;
 
 const formatRuntime = (min) => {
   if (!min) return null;
@@ -39,7 +68,10 @@ function ProviderRow({ label, items }) {
  * Модалка деталей фільму (bottom-sheet у стилі фільтрів/профілю).
  * movie — slim-обʼєкт зі списку (з _key), повні деталі довантажуються тут.
  */
-export default function MovieDetailsModal({ movie, onClose, onWatchTrailer, notify }) {
+export default function MovieDetailsModal({
+  movie, onClose, onWatchTrailer, notify,
+  isSaved, isShared, isWatched, onToggleSave, onToggleShared, onToggleWatched
+}) {
   const isTv = movie.media_type === 'tv' || String(movie._key || '').startsWith('tv_');
   const [details, setDetails] = useState(null);
   const [providers, setProviders] = useState(null);
@@ -179,12 +211,7 @@ export default function MovieDetailsModal({ movie, onClose, onWatchTrailer, noti
   };
 
   const openJustWatch = () => {
-    if (!providers?.link) return;
-    const wa = window.Telegram?.WebApp;
-    if (typeof wa?.openLink === 'function') {
-      try { wa.openLink(providers.link); return; } catch (e) { /* fall through */ }
-    }
-    window.open(providers.link, '_blank');
+    if (providers?.link) openExternal(providers.link);
   };
 
   const sheetStyle = {
@@ -272,6 +299,47 @@ export default function MovieDetailsModal({ movie, onClose, onWatchTrailer, noti
             </div>
           </div>
 
+          {/* Швидкі дії: ті самі toggle-и, що й на картках списку */}
+          {onToggleShared && movie._key != null && (
+            <div className="grid grid-cols-3 gap-2 mb-4">
+              <button
+                onClick={() => { haptic('light'); onToggleShared(movie._key); }}
+                className={actionChip(isShared)}
+                title={isShared ? 'Прибрати зі Спільних' : 'Додати у Спільні'}
+              >
+                <Star size={15} className={isShared ? 'fill-current' : ''} />
+                {isShared ? 'У Спільних' : 'У Спільні'}
+              </button>
+              <button
+                onClick={() => { haptic('light'); onToggleWatched(movie._key); }}
+                className={actionChip(isWatched)}
+                title={isWatched ? 'Повернути у список' : 'Позначити переглянутим'}
+              >
+                <Eye size={15} />
+                Бачив
+              </button>
+              {isSaved ? (
+                <button
+                  onClick={() => { haptic('light'); onToggleSave(movie._key); }}
+                  className={actionChip(false)}
+                  title="Прибрати зі свого списку"
+                >
+                  <Trash2 size={15} />
+                  Видалити
+                </button>
+              ) : (
+                <button
+                  onClick={() => { haptic('light'); onToggleSave(movie._key); }}
+                  className={actionChip(false)}
+                  title="Додати у свій список"
+                >
+                  <Heart size={15} />
+                  Зберегти
+                </button>
+              )}
+            </div>
+          )}
+
           {/* Жанри */}
           {details?.genres?.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mb-4">
@@ -281,28 +349,23 @@ export default function MovieDetailsModal({ movie, onClose, onWatchTrailer, noti
             </div>
           )}
 
-          {/* Де подивитись */}
+          {/* Де подивитись — сайти, якими реально користуються в Україні.
+              Кнопка відкриває пошук цього тайтла на сайті. */}
           <div className="mb-4">
             <p className="text-xs font-bold text-white/50 uppercase tracking-widest mb-2.5">Де подивитись</p>
-            {loading ? (
-              <div className="h-10 rounded-xl bg-white/5 animate-shimmer"></div>
-            ) : hasProviders ? (
-              <div className="space-y-2.5">
-                {!providers.isUA && (
-                  <p className="text-[10px] text-white/30">Для України даних немає — показано US</p>
-                )}
-                <ProviderRow label="Підписка" items={providers.flatrate} />
-                <ProviderRow label="Оренда" items={providers.rent} />
-                <ProviderRow label="Купівля" items={providers.buy} />
-                {providers.link && (
-                  <button onClick={openJustWatch} className="text-[11px] text-white/40 underline underline-offset-2 active:text-white/70">
-                    Більше на JustWatch →
-                  </button>
-                )}
-              </div>
-            ) : (
-              <p className="text-sm text-white/35">Немає даних про стрімінги для цього тайтла</p>
-            )}
+            <div className="flex flex-wrap gap-2">
+              {UA_SITES.map(s => (
+                <button
+                  key={s.name}
+                  onClick={() => openExternal(s.build(title, original))}
+                  className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-xl px-3 py-2 active:scale-95 transition-transform"
+                >
+                  <span className="text-[12px] font-bold text-white/85">{s.name}</span>
+                  <ExternalLink size={10} className="text-white/30" />
+                </button>
+              ))}
+            </div>
+            <p className="text-[10px] text-white/25 mt-2">Клік відкриє пошук «{title}» на сайті</p>
           </div>
 
           {/* Опис */}
@@ -322,6 +385,29 @@ export default function MovieDetailsModal({ movie, onClose, onWatchTrailer, noti
               {credits.actors.length > 0 && (
                 <p className="text-[12px] text-white/50"><span className="text-white/30 font-semibold">У ролях:</span> {credits.actors.join(', ')}</p>
               )}
+            </div>
+          )}
+
+          {/* Офіційні стрімінги (TMDB/JustWatch) — у самому низу:
+              для нашої аудиторії вони другорядні, місце зверху не займають */}
+          {loading ? (
+            <div className="h-8 rounded-xl skel mt-3"></div>
+          ) : hasProviders && (
+            <div className="mt-3 pt-3 border-t border-white/5">
+              <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2">Офіційні стрімінги</p>
+              <div className="space-y-2.5">
+                {!providers.isUA && (
+                  <p className="text-[10px] text-white/30">Для України даних немає — показано US</p>
+                )}
+                <ProviderRow label="Підписка" items={providers.flatrate} />
+                <ProviderRow label="Оренда" items={providers.rent} />
+                <ProviderRow label="Купівля" items={providers.buy} />
+                {providers.link && (
+                  <button onClick={openJustWatch} className="text-[11px] text-white/40 underline underline-offset-2 active:text-white/70">
+                    Більше на JustWatch →
+                  </button>
+                )}
+              </div>
             </div>
           )}
         </div>

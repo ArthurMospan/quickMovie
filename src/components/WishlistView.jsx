@@ -28,7 +28,7 @@ function MiniAvatar({ src, fallback }) {
  *  'shared'  — adder avatars; star (filled) to remove IF I added it
  *  'watched' — restore (return to my list)
  */
-function MovieCard({ movie, variant, isShared, sharedByMe, sharedByPartner, myPhoto, partnerPhoto, partnerName, onToggleSave, onToggleWatched, onToggleShared, notify, onOpen }) {
+function MovieCard({ movie, variant, isShared, isWatched, partnerSaw, sharedByMe, sharedByPartner, myPhoto, partnerPhoto, partnerName, onToggleSave, onToggleWatched, onToggleShared, notify, onOpen }) {
   const posterUrl = movie.poster_path ? `https://image.tmdb.org/t/p/w342${movie.poster_path}` : null;
   const fullTitle = getFullTitle(movie);
   const pressTimer = useRef(null);
@@ -70,7 +70,7 @@ function MovieCard({ movie, variant, isShared, sharedByMe, sharedByPartner, myPh
           src={posterUrl}
           alt={movie.title}
           draggable={false}
-          className={`absolute inset-0 w-full h-full object-cover transition-all ${variant === 'watched' ? 'opacity-30 grayscale' : 'opacity-90'}`}
+          className={`absolute inset-0 w-full h-full object-cover transition-all ${variant === 'watched' || (variant === 'shared' && isWatched) ? 'opacity-30 grayscale' : 'opacity-90'}`}
         />
       ) : (
         <div className="absolute inset-0 w-full h-full bg-white/5 flex items-center justify-center text-white/20">
@@ -95,6 +95,14 @@ function MovieCard({ movie, variant, isShared, sharedByMe, sharedByPartner, myPh
           </div>
         )}
 
+        {/* Партнер уже бачив цей тайтл (з його watched-списку) */}
+        {variant === 'shared' && partnerSaw && (
+          <div className="absolute top-8 left-2 flex items-center gap-1 bg-black/60 backdrop-blur-md rounded-full pl-1.5 pr-2 py-0.5 border border-white/10">
+            <Eye size={9} className="text-white/80" />
+            <span className="text-[8px] font-bold text-white/80">{partnerName ? `${partnerName.split(' ')[0]} бачив` : 'Партнер бачив'}</span>
+          </div>
+        )}
+
         {/* Action buttons */}
         <div className="absolute top-2 right-2 flex flex-col gap-2">
           {variant === 'mine' && (
@@ -116,14 +124,25 @@ function MovieCard({ movie, variant, isShared, sharedByMe, sharedByPartner, myPh
             </>
           )}
 
-          {variant === 'shared' && sharedByMe && (
-            <button
-              onClick={() => onToggleShared(movie._key ?? movie.id)}
-              className="p-2 bg-white text-black rounded-full active:scale-90 transition-transform shadow-lg"
-              title="Прибрати зі Спільних"
-            >
-              <Star size={14} className="fill-current" />
-            </button>
+          {variant === 'shared' && (
+            <>
+              <button
+                onClick={() => onToggleWatched(movie._key ?? movie.id)}
+                className={`p-2 backdrop-blur-md rounded-full border active:scale-90 transition-transform ${isWatched ? 'bg-white text-black border-white' : 'bg-black/50 text-white/60 border-white/10'}`}
+                title={isWatched ? 'Повернути (не бачив)' : 'Позначити «Бачив»'}
+              >
+                <Eye size={14} />
+              </button>
+              {sharedByMe && (
+                <button
+                  onClick={() => onToggleShared(movie._key ?? movie.id)}
+                  className="p-2 bg-white text-black rounded-full active:scale-90 transition-transform shadow-lg"
+                  title="Прибрати зі Спільних"
+                >
+                  <Star size={14} className="fill-current" />
+                </button>
+              )}
+            </>
           )}
 
           {variant === 'watched' && (
@@ -149,7 +168,7 @@ function MovieCard({ movie, variant, isShared, sharedByMe, sharedByPartner, myPh
         )}
       </div>
 
-      {variant === 'watched' && (
+      {(variant === 'watched' || (variant === 'shared' && isWatched)) && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <div className="bg-black/50 backdrop-blur-sm rounded-full p-3 border border-white/20">
             <Check size={24} className="text-white" />
@@ -306,6 +325,8 @@ export default function WishlistView({
               {sharedItems.map(movie => (
                 <MovieCard
                   key={movie._key} movie={movie} variant="shared"
+                  isWatched={watched?.includes(movie._key)}
+                  partnerSaw={(partnerProfile?.watched || []).includes(movie._key)}
                   sharedByMe={myShared?.includes(movie._key)}
                   sharedByPartner={partnerShared?.includes(movie._key)}
                   myPhoto={myPhoto}
@@ -348,13 +369,19 @@ export default function WishlistView({
         )}
       </div>
 
-      {/* Модалка деталей фільму */}
+      {/* Модалка деталей фільму (стан кнопок живе тут — оновлюється одразу) */}
       {selected && (
         <MovieDetailsModal
           movie={selected}
           onClose={() => setSelected(null)}
           onWatchTrailer={onWatchTrailer}
           notify={notify}
+          isSaved={mySaves?.includes(selected._key)}
+          isShared={myShared?.includes(selected._key)}
+          isWatched={watched?.includes(selected._key)}
+          onToggleSave={onToggleSave}
+          onToggleShared={onToggleShared}
+          onToggleWatched={onToggleWatched}
         />
       )}
     </div>
