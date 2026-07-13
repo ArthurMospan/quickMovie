@@ -355,10 +355,10 @@ function VideoCard({
              Тап по будь-якому місцю відео вмикає звук з fade-in — плашку
              прибрано, але жест користувача для WebView все одно потрібен. */}
       {active && isGlobalMuted && !everUnmuted && isPlaying && !warmingUp && (
-        <div className="absolute left-1/2 -translate-x-1/2 bottom-40 z-40 pointer-events-none animate-in">
-          <div className="bg-black/55 backdrop-blur-xl border border-white/15 rounded-full pl-3 pr-4 py-2 flex items-center gap-2 shadow-xl">
-            <VolumeX size={15} className="text-white/70" />
-            <p className="text-white/90 text-xs font-semibold whitespace-nowrap">Торкніться — увімкнемо звук</p>
+        <div className="absolute left-1/2 -translate-x-1/2 z-40 pointer-events-none animate-in" style={{ bottom: 'calc(10rem + 40px)' }}>
+          <div className="bg-white/25 backdrop-blur-xl border border-white/40 rounded-full pl-3 pr-4 py-2 flex items-center gap-2 shadow-xl">
+            <VolumeX size={15} className="text-white" />
+            <p className="text-white text-xs font-semibold whitespace-nowrap">Торкніться — увімкнемо звук</p>
           </div>
         </div>
       )}
