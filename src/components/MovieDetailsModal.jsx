@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { X, Star, Film, Tv, Play, Copy, Calendar, Clock, Eye, Heart, Trash2, ExternalLink } from 'lucide-react';
+import { X, Star, Film, Tv, Play, Copy, Calendar, Clock, Check, Heart, Trash2 } from 'lucide-react';
 import { getMovieDetailsWithVideos, getTVDetailsWithVideos, getWatchProviders, getTrailerKey, getCreditsInfo } from '../services/tmdb';
 import { copyToClipboard, haptic } from '../services/ui';
 
@@ -8,16 +8,42 @@ const IMG = 'https://image.tmdb.org/t/p/';
 // --- Де реально дивляться в Україні ---
 // Клік відкриває ПОШУК за назвою на сайті (DLE-сайти приймають query у GET).
 // Дзеркала періодично переїжджають — якщо кнопка перестала працювати,
-// достатньо оновити домен у цьому списку.
+// достатньо оновити domain/URL у цьому списку.
 // t = українська назва, o = оригінальна (рєзка краще шукає за оригінальною).
+const dleSearch = (domain) => (t) => `https://${domain}/index.php?do=search&subaction=search&story=${encodeURIComponent(t)}`;
 const UA_SITES = [
-  { name: 'HDrezka', build: (t, o) => `https://rezka.ag/search/?do=search&subaction=search&q=${encodeURIComponent(o || t)}` },
-  { name: 'UAKino', build: (t) => `https://uakino.me/index.php?do=search&subaction=search&story=${encodeURIComponent(t)}` },
-  { name: 'UAFlix', build: (t) => `https://uafix.net/index.php?do=search&subaction=search&story=${encodeURIComponent(t)}` },
-  { name: 'Megogo', build: (t) => `https://megogo.net/ua/search-extended?q=${encodeURIComponent(t)}` },
-  { name: 'sweet.tv', build: (t) => `https://sweet.tv/search?query=${encodeURIComponent(t)}` },
-  { name: 'Київстар ТБ', build: (t) => `https://tv.kyivstar.ua/search?q=${encodeURIComponent(t)}` },
+  { name: 'HDrezka', domain: 'rezka.ag', build: (t, o) => `https://rezka.ag/search/?do=search&subaction=search&q=${encodeURIComponent(o || t)}` },
+  { name: 'UAKino', domain: 'uakino.me', build: dleSearch('uakino.me') },
+  { name: 'UAFlix', domain: 'uafix.net', build: dleSearch('uafix.net') },
+  { name: 'Eneyida', domain: 'eneyida.tv', build: dleSearch('eneyida.tv') },
+  { name: 'UASerials', domain: 'uaserials.com', build: dleSearch('uaserials.com') },
+  { name: 'KinoUkr', domain: 'kinoukr.com', build: dleSearch('kinoukr.com') },
+  { name: 'Megogo', domain: 'megogo.net', build: (t) => `https://megogo.net/ua/search-extended?q=${encodeURIComponent(t)}` },
+  { name: 'sweet.tv', domain: 'sweet.tv', build: (t) => `https://sweet.tv/search?query=${encodeURIComponent(t)}` },
+  { name: 'Київстар', domain: 'tv.kyivstar.ua', build: (t) => `https://tv.kyivstar.ua/search?q=${encodeURIComponent(t)}` },
 ];
+
+// Логотип сайту: фавіконка через Google-кеш (стабільно віддає будь-який домен),
+// при помилці — кружечок з першою літерою.
+function SiteLogo({ domain, name }) {
+  const [err, setErr] = useState(false);
+  if (err) {
+    return (
+      <span className="w-7 h-7 rounded-lg bg-white/10 flex items-center justify-center text-[12px] font-black text-white/80">
+        {name[0]}
+      </span>
+    );
+  }
+  return (
+    <img
+      src={`https://www.google.com/s2/favicons?domain=${domain}&sz=64`}
+      alt=""
+      loading="lazy"
+      onError={() => setErr(true)}
+      className="w-7 h-7 rounded-lg bg-white/10 object-contain"
+    />
+  );
+}
 
 // Зовнішні лінки: через Telegram API, з fallback на window.open
 const openExternal = (url) => {
@@ -70,7 +96,7 @@ function ProviderRow({ label, items }) {
  */
 export default function MovieDetailsModal({
   movie, onClose, onWatchTrailer, notify,
-  isSaved, isShared, isWatched, onToggleSave, onToggleShared, onToggleWatched
+  isSaved, isShared, isWatched, onToggleSave, onToggleShared, onToggleWatched, onRemove
 }) {
   const isTv = movie.media_type === 'tv' || String(movie._key || '').startsWith('tv_');
   const [details, setDetails] = useState(null);
@@ -299,45 +325,45 @@ export default function MovieDetailsModal({
             </div>
           </div>
 
-          {/* Швидкі дії: ті самі toggle-и, що й на картках списку */}
+          {/* Швидкі дії. Логіка «спершу зберегти»: поки тайтла немає в ЖОДНОМУ
+              з моїх списків — одна велика кнопка ❤. Щойно він хоч десь є —
+              зʼявляються ⭐/✓/🗑, а 🗑 видаляє одразу з УСІХ списків. */}
           {onToggleShared && movie._key != null && (
-            <div className="grid grid-cols-3 gap-2 mb-4">
-              <button
-                onClick={() => { haptic('light'); onToggleShared(movie._key); }}
-                className={actionChip(isShared)}
-                title={isShared ? 'Прибрати зі Спільних' : 'Додати у Спільні'}
-              >
-                <Star size={15} className={isShared ? 'fill-current' : ''} />
-                {isShared ? 'У Спільних' : 'У Спільні'}
-              </button>
-              <button
-                onClick={() => { haptic('light'); onToggleWatched(movie._key); }}
-                className={actionChip(isWatched)}
-                title={isWatched ? 'Повернути у список' : 'Позначити переглянутим'}
-              >
-                <Eye size={15} />
-                Бачив
-              </button>
-              {isSaved ? (
+            (isSaved || isShared || isWatched) ? (
+              <div className="grid grid-cols-3 gap-2 mb-4">
                 <button
-                  onClick={() => { haptic('light'); onToggleSave(movie._key); }}
+                  onClick={() => { haptic('light'); onToggleShared(movie._key); }}
+                  className={actionChip(isShared)}
+                  title={isShared ? 'Прибрати зі Спільних' : 'Додати у Спільні'}
+                >
+                  <Star size={15} className={isShared ? 'fill-current' : ''} />
+                  {isShared ? 'У Спільних' : 'У Спільні'}
+                </button>
+                <button
+                  onClick={() => { haptic('light'); onToggleWatched(movie._key); }}
+                  className={actionChip(isWatched)}
+                  title={isWatched ? 'Повернути у список' : 'Позначити переглянутим'}
+                >
+                  <Check size={15} />
+                  Бачив
+                </button>
+                <button
+                  onClick={() => { haptic('light'); (onRemove || onToggleSave)(movie._key); }}
                   className={actionChip(false)}
-                  title="Прибрати зі свого списку"
+                  title="Видалити з усіх списків"
                 >
                   <Trash2 size={15} />
                   Видалити
                 </button>
-              ) : (
-                <button
-                  onClick={() => { haptic('light'); onToggleSave(movie._key); }}
-                  className={actionChip(false)}
-                  title="Додати у свій список"
-                >
-                  <Heart size={15} />
-                  Зберегти
-                </button>
-              )}
-            </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => { haptic('light'); onToggleSave(movie._key); }}
+                className="w-full mb-4 bg-white/10 border border-white/15 rounded-xl py-3 flex items-center justify-center gap-2 text-sm font-bold text-white active:scale-95 transition-transform"
+              >
+                <Heart size={16} /> Зберегти у свій список
+              </button>
+            )
           )}
 
           {/* Жанри */}
@@ -348,25 +374,6 @@ export default function MovieDetailsModal({
               ))}
             </div>
           )}
-
-          {/* Де подивитись — сайти, якими реально користуються в Україні.
-              Кнопка відкриває пошук цього тайтла на сайті. */}
-          <div className="mb-4">
-            <p className="text-xs font-bold text-white/50 uppercase tracking-widest mb-2.5">Де подивитись</p>
-            <div className="flex flex-wrap gap-2">
-              {UA_SITES.map(s => (
-                <button
-                  key={s.name}
-                  onClick={() => openExternal(s.build(title, original))}
-                  className="flex items-center gap-1.5 bg-white/5 border border-white/10 rounded-xl px-3 py-2 active:scale-95 transition-transform"
-                >
-                  <span className="text-[12px] font-bold text-white/85">{s.name}</span>
-                  <ExternalLink size={10} className="text-white/30" />
-                </button>
-              ))}
-            </div>
-            <p className="text-[10px] text-white/25 mt-2">Клік відкриє пошук «{title}» на сайті</p>
-          </div>
 
           {/* Опис */}
           {(details?.overview || movie.overview) && (
@@ -388,28 +395,46 @@ export default function MovieDetailsModal({
             </div>
           )}
 
-          {/* Офіційні стрімінги (TMDB/JustWatch) — у самому низу:
-              для нашої аудиторії вони другорядні, місце зверху не займають */}
-          {loading ? (
-            <div className="h-8 rounded-xl skel mt-3"></div>
-          ) : hasProviders && (
-            <div className="mt-3 pt-3 border-t border-white/5">
-              <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2">Офіційні стрімінги</p>
-              <div className="space-y-2.5">
-                {!providers.isUA && (
-                  <p className="text-[10px] text-white/30">Для України даних немає — показано US</p>
-                )}
-                <ProviderRow label="Підписка" items={providers.flatrate} />
-                <ProviderRow label="Оренда" items={providers.rent} />
-                <ProviderRow label="Купівля" items={providers.buy} />
-                {providers.link && (
-                  <button onClick={openJustWatch} className="text-[11px] text-white/40 underline underline-offset-2 active:text-white/70">
-                    Більше на JustWatch →
-                  </button>
-                )}
-              </div>
+          {/* Де подивитись — у самому НИЗУ картки: спершу сайти з логотипами,
+              якими реально користуються в Україні (клік = пошук за назвою),
+              нижче — офіційні стрімінги з TMDB (другорядні, але хай будуть). */}
+          <div className="mt-4 pt-4 border-t border-white/5">
+            <p className="text-xs font-bold text-white/50 uppercase tracking-widest mb-2.5">Де подивитись</p>
+            <div className="grid grid-cols-3 gap-2">
+              {UA_SITES.map(s => (
+                <button
+                  key={s.name}
+                  onClick={() => openExternal(s.build(title, original))}
+                  className="flex flex-col items-center gap-1.5 bg-white/5 border border-white/10 rounded-xl px-2 py-2.5 active:scale-95 transition-transform"
+                >
+                  <SiteLogo domain={s.domain} name={s.name} />
+                  <span className="text-[10px] font-bold text-white/80 leading-none">{s.name}</span>
+                </button>
+              ))}
             </div>
-          )}
+            <p className="text-[10px] text-white/25 mt-2">Клік відкриє пошук «{title}» на сайті</p>
+
+            {loading ? (
+              <div className="h-8 rounded-xl skel mt-3"></div>
+            ) : hasProviders && (
+              <div className="mt-3 pt-3 border-t border-white/5">
+                <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest mb-2">Офіційні стрімінги</p>
+                <div className="space-y-2.5">
+                  {!providers.isUA && (
+                    <p className="text-[10px] text-white/30">Для України даних немає — показано US</p>
+                  )}
+                  <ProviderRow label="Підписка" items={providers.flatrate} />
+                  <ProviderRow label="Оренда" items={providers.rent} />
+                  <ProviderRow label="Купівля" items={providers.buy} />
+                  {providers.link && (
+                    <button onClick={openJustWatch} className="text-[11px] text-white/40 underline underline-offset-2 active:text-white/70">
+                      Більше на JustWatch →
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Кнопка трейлера */}

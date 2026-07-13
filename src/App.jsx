@@ -23,6 +23,7 @@ import {
   toggleSaveMovie,
   toggleMovieWatched,
   toggleSharedMovie,
+  removeUserData,
   updateUserPartnerId,
   addReleaseReminder,
   reconcileUserData,
@@ -40,6 +41,40 @@ const readLS = (key) => {
 const writeLS = (key, arr) => {
   try { localStorage.setItem(key, JSON.stringify(arr)); } catch (e) { /* full */ }
 };
+
+// --- Тумбстоуни видалень (фікс «видалив, а воно повернулось») ---
+// Причина бага: one-time reconcile бачив у localStorage id, яких немає в
+// хмарі, і вважав їх «збереженими офлайн» → заливав НАЗАД, хоча насправді
+// вони були ВИДАЛЕНІ (на іншому пристрої або поки Firestore не відповів).
+// Тепер кожне видалення лишає мітку на 30 днів: такі id не реконсилюються,
+// фільтруються зі снапшота і ще раз добиваються в хмарі (cloud-heal).
+const LS_TOMB = 'qm_deleted';
+const TOMB_TTL_MS = 30 * 864e5;
+const readTomb = () => {
+  try {
+    const t = JSON.parse(localStorage.getItem(LS_TOMB)) || {};
+    const now = Date.now();
+    for (const list of Object.keys(t)) {
+      for (const [id, ts] of Object.entries(t[list])) {
+        if (now - ts > TOMB_TTL_MS) delete t[list][id];
+      }
+    }
+    return t;
+  } catch (e) { return {}; }
+};
+const writeTomb = (t) => {
+  try { localStorage.setItem(LS_TOMB, JSON.stringify(t)); } catch (e) { /* full */ }
+};
+const addTomb = (list, id) => {
+  const t = readTomb();
+  (t[list] = t[list] || {})[id] = Date.now();
+  writeTomb(t);
+};
+const clearTomb = (list, id) => {
+  const t = readTomb();
+  if (t[list]?.[id] != null) { delete t[list][id]; writeTomb(t); }
+};
+const tombSet = (list) => new Set(Object.keys(readTomb()[list] || {}));
 
 // --- Media key for saves/watched/shared/seen ---
 // TMDB movie and TV ids are SEPARATE id spaces (movie/1396 ≠ tv/1396).
@@ -352,23 +387,36 @@ export default function App() {
     const unsub = subscribeToUser(user.uid, (docSnap) => {
       if (!docSnap.exists()) return;
       const remote = docSnap.data();
+      const tombSaves = tombSet('saves');
+      const tombShared = tombSet('shared');
+      const tombWatched = tombSet('watched');
 
-      // One-time reconcile: push local-only saves/shared (made while offline) to Firestore
+      // One-time reconcile: push local-only saves/shared (made while offline)
+      // to Firestore — але БЕЗ видалених (tombstone), інакше видалене воскресає
       const localSaves = readLS(LS_SAVES);
       const localShared = readLS(LS_SHARED);
-      const missing = localSaves.filter(id => !(remote.saves || []).includes(id));
-      const missingShared = localShared.filter(id => !(remote.shared || []).includes(id));
+      const missing = localSaves.filter(id => !(remote.saves || []).includes(id) && !tombSaves.has(id));
+      const missingShared = localShared.filter(id => !(remote.shared || []).includes(id) && !tombShared.has(id));
       if ((missing.length > 0 || missingShared.length > 0) && !reconciled.current) {
         reconciled.current = true;
         // Single write instead of one request per movie
         reconcileUserData(user.uid, { saves: missing, shared: missingShared }).catch(() => {});
       }
 
+      // Cloud-heal: видалене досі лежить у хмарі (видалення було офлайн або
+      // запис не пройшов) → прибираємо там ще раз, одним записом
+      const staleSaves = (remote.saves || []).filter(id => tombSaves.has(id));
+      const staleShared = (remote.shared || []).filter(id => tombShared.has(id));
+      const staleWatched = (remote.watched || []).filter(id => tombWatched.has(id));
+      if (staleSaves.length > 0 || staleShared.length > 0 || staleWatched.length > 0) {
+        removeUserData(user.uid, { saves: staleSaves, shared: staleShared, watched: staleWatched }).catch(() => {});
+      }
+
       const merged = {
         ...remote,
-        saves: [...new Set([...(remote.saves || []), ...missing])],
-        shared: [...new Set([...(remote.shared || []), ...missingShared])],
-        watched: remote.watched || []
+        saves: [...new Set([...(remote.saves || []), ...missing])].filter(id => !tombSaves.has(id)),
+        shared: [...new Set([...(remote.shared || []), ...missingShared])].filter(id => !tombShared.has(id)),
+        watched: (remote.watched || []).filter(id => !tombWatched.has(id))
       };
       setUserData(merged);
       writeLS(LS_SAVES, merged.saves);
@@ -606,6 +654,7 @@ export default function App() {
     const movieId = keyOf(arg);
     const cur = userDataRef.current;
     const isSaved = cur.saves?.includes(movieId);
+    if (isSaved) addTomb('saves', movieId); else clearTomb('saves', movieId);
     const newSaves = isSaved
       ? (cur.saves || []).filter(id => id !== movieId)
       : [...(cur.saves || []), movieId];
@@ -630,12 +679,18 @@ export default function App() {
     const cur = userDataRef.current;
     const isWatched = cur.watched?.includes(movieId);
     if (isWatched) {
+      // не бачив → повертається у мій список
+      addTomb('watched', movieId);
+      clearTomb('saves', movieId);
       applyLocal({
         watched: (cur.watched || []).filter(id => id !== movieId),
         saves: [...new Set([...(cur.saves || []), movieId])]
       });
       showToast('Повернуто у список ❤');
     } else {
+      // бачив → переїжджає зі збережених у переглянуті
+      addTomb('saves', movieId);
+      clearTomb('watched', movieId);
       applyLocal({
         watched: [...(cur.watched || []), movieId],
         saves: (cur.saves || []).filter(id => id !== movieId)
@@ -658,6 +713,7 @@ export default function App() {
     const movieId = keyOf(arg);
     const cur = userDataRef.current;
     const isShared = cur.shared?.includes(movieId);
+    if (isShared) addTomb('shared', movieId); else clearTomb('shared', movieId);
     const newShared = isShared
       ? (cur.shared || []).filter(id => id !== movieId)
       : [...(cur.shared || []), movieId];
@@ -670,6 +726,30 @@ export default function App() {
         await toggleSharedMovie(u.uid, movieId, isShared);
       } catch (e) {
         console.error("Shared sync error:", e);
+      }
+    }
+  }, [applyLocal, showToast]);
+
+  // --- Повне видалення: з усіх трьох списків одразу (🗑 у картці фільму) ---
+  const handleRemoveCompletely = useCallback(async (arg) => {
+    const movieId = keyOf(arg);
+    const cur = userDataRef.current;
+    addTomb('saves', movieId);
+    addTomb('shared', movieId);
+    addTomb('watched', movieId);
+    applyLocal({
+      saves: (cur.saves || []).filter(id => id !== movieId),
+      shared: (cur.shared || []).filter(id => id !== movieId),
+      watched: (cur.watched || []).filter(id => id !== movieId)
+    });
+    showToast('Видалено з усіх списків');
+
+    const u = userRef.current;
+    if (u) {
+      try {
+        await removeUserData(u.uid, { saves: [movieId], shared: [movieId], watched: [movieId] });
+      } catch (e) {
+        console.error('Remove sync error:', e);
       }
     }
   }, [applyLocal, showToast]);
@@ -891,6 +971,7 @@ export default function App() {
           onToggleSave={handleToggleSave}
           onToggleWatched={handleToggleWatched}
           onToggleShared={handleToggleShared}
+          onRemove={handleRemoveCompletely}
           watched={userData.watched || []}
           onGoToProfile={() => setShowProfile(true)}
           notify={showToast}

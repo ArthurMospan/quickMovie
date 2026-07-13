@@ -162,6 +162,18 @@ export const reconcileUserData = async (uid, { saves = [], shared = [] }) => {
   await safeUpdate(uid, data);
 };
 
+// --- Remove ids from several lists in ONE write ---
+// Використовується для «Видалити звідусіль» (картка фільму) та для
+// cloud-heal видалень, які не долетіли до Firestore (офлайн/помилка).
+export const removeUserData = async (uid, { saves = [], watched = [], shared = [] }) => {
+  if (!uid || (saves.length === 0 && watched.length === 0 && shared.length === 0)) return;
+  const data = {};
+  if (saves.length > 0) data.saves = arrayRemove(...saves);
+  if (watched.length > 0) data.watched = arrayRemove(...watched);
+  if (shared.length > 0) data.shared = arrayRemove(...shared);
+  await safeUpdate(uid, data);
+};
+
 // --- Symmetric partner unlink: clear the partner's pointer to me
 // (only if it actually points at me — we don't touch anything else) ---
 export const unlinkPartner = async (myUid, partnerUid) => {

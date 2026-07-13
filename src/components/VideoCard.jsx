@@ -364,9 +364,10 @@ function VideoCard({
       )}
 
       {/* Right Actions (portrait: right column; landscape: bottom row via CSS) */}
-      {/* pointer-events-none when inactive: invisible buttons of neighbour cards
-          must NOT catch taps mid-swipe (could save a different movie) */}
-      <div className={`landscape-actions absolute right-3 bottom-20 flex flex-col items-center gap-4 z-30 transition-opacity duration-300 ${active ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'}`}>
+      {/* Кнопки видимі ЗАВЖДИ: ховання через opacity на неактивних картках
+          виглядало як миготіння на кожному свайпі. У сусідніх карток вимкнені
+          лише кліки — щоб тап посеред свайпу не зберіг інший фільм. */}
+      <div className={`landscape-actions absolute right-3 bottom-20 flex flex-col items-center gap-4 z-30 ${active ? 'pointer-events-auto' : 'pointer-events-none'}`}>
         <ActionBtn
           icon={<Heart size={24} className={isSaved ? 'fill-white text-white' : 'text-white'} />}
           label={isSaved ? "Додано" : "Зберегти"}
@@ -396,8 +397,8 @@ function VideoCard({
         />
       </div>
 
-      {/* Bottom Info */}
-      <div className={`landscape-info absolute bottom-4 left-4 right-20 z-30 flex flex-col gap-1.5 pointer-events-none text-white drop-shadow-lg transition-opacity duration-300 ${active ? 'opacity-100' : 'opacity-0'}`}>
+      {/* Bottom Info — теж завжди видиме (без fade-in при кожному свайпі) */}
+      <div className="landscape-info absolute bottom-4 left-4 right-20 z-30 flex flex-col gap-1.5 pointer-events-none text-white drop-shadow-lg">
         {upcoming && (
           <span className="bg-white text-black px-2 py-0.5 rounded text-[10px] font-bold self-start mb-0.5">
             Вихід: {formatDateUA(movie.release_date)}
@@ -405,7 +406,7 @@ function VideoCard({
         )}
         {/* Назва: зажати → скопіювати (з вібрацією) */}
         <h2
-          className="no-callout text-2xl font-bold leading-tight drop-shadow-md pointer-events-auto"
+          className={`no-callout text-2xl font-bold leading-tight drop-shadow-md ${active ? 'pointer-events-auto' : ''}`}
           onTouchStart={titlePressStart}
           onTouchEnd={titlePressEnd}
           onTouchMove={titlePressEnd}

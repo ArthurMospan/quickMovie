@@ -10,6 +10,14 @@ const getFullTitle = (movie) => {
   return original && original !== movie.title ? `${movie.title} / ${original}` : movie.title;
 };
 
+// Єдиний стиль кнопок дій на картках УСІХ списків (~+20% розміру).
+// on = активний стан (біла заливка). Кошик свідомо лишили меншим.
+const cardBtn = (on) =>
+  `p-2.5 backdrop-blur-md rounded-full border active:scale-90 transition-transform ${
+    on ? 'bg-white text-black border-white' : 'bg-black/50 text-white/70 border-white/10'
+  }`;
+const CARD_ICON = 16;
+
 function MiniAvatar({ src, fallback }) {
   const [err, setErr] = useState(false);
   if (src && !err) {
@@ -105,53 +113,54 @@ function MovieCard({ movie, variant, isShared, isWatched, partnerSaw, sharedByMe
 
         {/* Action buttons */}
         <div className="absolute top-2 right-2 flex flex-col gap-2">
+          {/* Порядок і вигляд однакові в усіх списках: ⭐ зверху, ✓ під нею */}
           {variant === 'mine' && (
             <>
               <button
                 onClick={() => onToggleShared(movie._key ?? movie.id)}
-                className={`p-2 backdrop-blur-md rounded-full border active:scale-90 transition-transform ${isShared ? 'bg-white text-black border-white' : 'bg-black/50 text-white/70 border-white/10'}`}
+                className={cardBtn(isShared)}
                 title={isShared ? 'Прибрати зі Спільних' : 'Додати у Спільні'}
               >
-                <Star size={14} className={isShared ? 'fill-current' : ''} />
+                <Star size={CARD_ICON} className={isShared ? 'fill-current' : ''} />
               </button>
               <button
                 onClick={() => onToggleWatched(movie._key ?? movie.id)}
-                className="p-2 bg-black/50 backdrop-blur-md rounded-full border border-white/10 text-white/60 active:scale-90 transition-transform"
+                className={cardBtn(false)}
                 title="Позначити переглянутим"
               >
-                <Check size={14} />
+                <Check size={CARD_ICON} />
               </button>
             </>
           )}
 
           {variant === 'shared' && (
             <>
-              <button
-                onClick={() => onToggleWatched(movie._key ?? movie.id)}
-                className={`p-2 backdrop-blur-md rounded-full border active:scale-90 transition-transform ${isWatched ? 'bg-white text-black border-white' : 'bg-black/50 text-white/60 border-white/10'}`}
-                title={isWatched ? 'Повернути (не бачив)' : 'Позначити «Бачив»'}
-              >
-                <Eye size={14} />
-              </button>
               {sharedByMe && (
                 <button
                   onClick={() => onToggleShared(movie._key ?? movie.id)}
-                  className="p-2 bg-white text-black rounded-full active:scale-90 transition-transform shadow-lg"
+                  className={cardBtn(true)}
                   title="Прибрати зі Спільних"
                 >
-                  <Star size={14} className="fill-current" />
+                  <Star size={CARD_ICON} className="fill-current" />
                 </button>
               )}
+              <button
+                onClick={() => onToggleWatched(movie._key ?? movie.id)}
+                className={cardBtn(isWatched)}
+                title={isWatched ? 'Повернути (не бачив)' : 'Позначити «Бачив»'}
+              >
+                <Check size={CARD_ICON} />
+              </button>
             </>
           )}
 
           {variant === 'watched' && (
             <button
               onClick={() => onToggleWatched(movie._key ?? movie.id)}
-              className="p-2 bg-black/50 backdrop-blur-md rounded-full text-white border border-white/10 active:scale-90 transition-transform"
+              className={cardBtn(false)}
               title="Повернути у список"
             >
-              <RotateCcw size={14} />
+              <RotateCcw size={CARD_ICON} />
             </button>
           )}
         </div>
@@ -181,7 +190,7 @@ function MovieCard({ movie, variant, isShared, isWatched, partnerSaw, sharedByMe
 
 export default function WishlistView({
   mySaves, myShared, partnerShared, partnerId, partnerProfile, myPhoto, initialTab,
-  onToggleSave, onToggleWatched, onToggleShared, watched, onGoToProfile, notify, onWatchTrailer
+  onToggleSave, onToggleWatched, onToggleShared, onRemove, watched, onGoToProfile, notify, onWatchTrailer
 }) {
   const [tab, setTab] = useState(initialTab || 'mine');
   const [moviesCache, setMoviesCache] = useState({});
@@ -382,6 +391,7 @@ export default function WishlistView({
           onToggleSave={onToggleSave}
           onToggleShared={onToggleShared}
           onToggleWatched={onToggleWatched}
+          onRemove={onRemove}
         />
       )}
     </div>
